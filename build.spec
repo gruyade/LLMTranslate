@@ -129,18 +129,8 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=True,
-    upx=True,
-    # PySide6 / Python ランタイム DLL は UPX と相性が悪いため除外
-    upx_exclude=[
-        'Qt6Core.dll',
-        'Qt6Gui.dll',
-        'Qt6Widgets.dll',
-        'Qt6Network.dll',
-        'Qt6OpenGL.dll',
-        'python3*.dll',
-        'vcruntime*.dll',
-        'msvcp*.dll',
-    ],
+    upx=False,
+    upx_exclude=[],
     runtime_tmpdir=None,
     console=False,          # コンソール非表示
     disable_windowed_traceback=False,

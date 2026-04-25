@@ -45,6 +45,7 @@ TRANSLATIONS = {
     "settings.threshold": "변경 감지 임계값:",
     "settings.ocr_precheck": "OCR 사전 검사 사용 (Tesseract 필요)",
     "settings.tesseract_path": "Tesseract 경로:",
+    "settings.log_level": "로그 레벨:",
     "settings.ui_language": "UI 언어:",
     "settings.restart_required": "재시작 필요",
     "settings.restart_msg": "언어 변경은 애플리케이션을 재시작한 후에 적용됩니다.",
@@ -54,6 +55,4 @@ TRANSLATIONS = {
     "error.capture": "캡처 오류: {error}",
     "error.translation": "번역 오류: {error}",
     "error.unexpected": "예기치 않은 오류: {error}",
-}
-pected": "예기치 않은 오류: {error}",
 }
