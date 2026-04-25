@@ -45,6 +45,7 @@ TRANSLATIONS = {
     "settings.threshold": "Umbral de cambio:",
     "settings.ocr_precheck": "Usar verificación previa de OCR (requiere Tesseract)",
     "settings.tesseract_path": "Ruta de Tesseract:",
+    "settings.log_level": "Nivel de registro:",
     "settings.ui_language": "Idioma de la interfaz:",
     "settings.restart_required": "Reinicio requerido",
     "settings.restart_msg": "El cambio de idioma se aplicará después de reiniciar la aplicación.",
@@ -54,6 +55,4 @@ TRANSLATIONS = {
     "error.capture": "Error de captura: {error}",
     "error.translation": "Error de traducción: {error}",
     "error.unexpected": "Error inesperado: {error}",
-}
-ror.unexpected": "Error inesperado: {error}",
 }

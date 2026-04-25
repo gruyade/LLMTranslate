@@ -45,6 +45,7 @@ TRANSLATIONS = {
     "settings.threshold": "變化檢測閾值:",
     "settings.ocr_precheck": "使用 OCR 預檢 (需要 Tesseract)",
     "settings.tesseract_path": "Tesseract 路徑:",
+    "settings.log_level": "日誌級別:",
     "settings.ui_language": "界面語言:",
     "settings.restart_required": "需要重啟",
     "settings.restart_msg": "語言更改將在重啟應用程序後生效。",
@@ -54,6 +55,4 @@ TRANSLATIONS = {
     "error.capture": "抓取錯誤: {error}",
     "error.translation": "翻譯錯誤: {error}",
     "error.unexpected": "意外錯誤: {error}",
-}
-  "error.unexpected": "意外錯誤: {error}",
 }
