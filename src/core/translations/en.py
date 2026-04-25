@@ -45,6 +45,7 @@ TRANSLATIONS = {
     "settings.threshold": "Change Threshold:",
     "settings.ocr_precheck": "Use OCR Pre-check (Requires Tesseract)",
     "settings.tesseract_path": "Tesseract Path:",
+    "settings.log_level": "Log Level:",
     "settings.ui_language": "UI Language:",
     "settings.restart_required": "Restart Required",
     "settings.restart_msg": "Language change will be applied after restarting the application.",

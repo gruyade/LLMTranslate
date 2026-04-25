@@ -14,7 +14,7 @@ Windows desktop screen translator using LLM (OpenAI-compatible APIs) with Vision
 
 ## ✨ Features
 
-- **Overlay Capture**: Display a resizable/movable overlay frame to capture screen areas.
+- **Overlay Capture**: Display a resizable/movable overlay frame to capture screen areas. (Frame color is customizable in settings.)
 - **LLM-Powered Translation**: Send captured images to OpenAI-compatible APIs (LM Studio, OpenAI, etc.).
 - **Floating Result Window**: Translation results appear in a semi-transparent window next to the frame.
 - **Manual Mode**: Execute translation via the UI button or system tray menu.
@@ -23,6 +23,21 @@ Windows desktop screen translator using LLM (OpenAI-compatible APIs) with Vision
 - **System Tray Integration**: Full control via the taskbar icon.
 - **Fine-tuned Inference**: Adjust parameters like Temperature, Max Tokens, and Top P (compatible with LM Studio).
 - **Presets**: Save and switch between different API/model configurations.
+
+## 🎯 Use Cases
+
+### Author's Intended Use
+- Translating in-game text for games with no localization or poor-quality translations
+- Reducing the effort of translating text that cannot be copied and pasted
+
+### AI-Recommended Use Cases
+- Navigating untranslated foreign software UIs
+- Monitoring and translating live stream chat in a foreign language (Auto-Monitor Mode automatically translates new messages)
+- Translating foreign-language text on remote desktops or virtual machines
+- Translating copy-protected PDFs or DRM-locked e-books
+- Real-time translation of foreign-language screens shared in video meetings (auto-translates as slides change)
+- Translating Canvas/WebGL-based web apps and other screens where browser built-in translation doesn't work
+- Checking reference translations while studying a foreign language
 
 ## 🌍 Supported UI Languages
 
@@ -78,7 +93,7 @@ python run.py
 ### Basic Operation
 
 1. Launch the app to see the icon in the system tray.
-2. A red overlay frame appears. Drag to move, resize via corners.
+2. An overlay frame appears. Drag to move, resize via corners. (Frame color is customizable in settings.)
 3. Align the frame with the text area you want to translate.
 4. Click the **Translation Button** on the overlay frame (or right-click tray icon -> "Execute Translation").
 5. The result appears in a floating window next to the frame.
@@ -134,6 +149,24 @@ pyinstaller build.spec
 
 The executable will be generated in `dist/LLMTranslate.exe`.
 
+## ⚠️ Disclaimer
+
+This project was developed with the assistance of AI tools for personal hobby use.
+
+- Normal use cases are expected to work correctly, but **edge cases are not fully covered**.
+- **No warranty** is provided for any damages or losses resulting from the use of this software.
+- Use at your own risk.
+- This app captures the screen area within the overlay frame and sends the image **directly to the configured API**. If the content of the captured image is deemed inappropriate by the API provider, your account may be suspended or banned. **No responsibility is taken for any such consequences.**
+
+## 🖥️ Development Environment
+
+| Item | Details |
+|------|---------|
+| OS | Windows 11 |
+| Language | Python 3.11 |
+| IDE | Visual Studio Code |
+| AI Assistance | Roo Code |
+| Primary Model Used | Claude Opus 4.6 (Design), Sonnet 4.6 (Design, Implementation, Debugging), Google Gemini 3 Flash (Implementation) |
 ## 🛠️ Tech Stack
 
 - **UI**: PySide6 (Qt for Python)
