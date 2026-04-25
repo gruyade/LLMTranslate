@@ -118,26 +118,36 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# one-dir モード: %TEMP% への展開が不要になりアンチウイルスの誤検知を回避
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
+    [],                         # one-dir: binaries/datas は COLLECT に渡す
+    exclude_binaries=True,      # one-dir の必須設定
     name='LLMTranslate',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,
+    strip=False,
     upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,          # コンソール非表示
+    console=False,              # コンソール非表示
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='src/resources/icon.ico',  # Windowsアイコン
+    icon='src/resources/icon.ico',
     version_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='LLMTranslate',        # dist/LLMTranslate/ フォルダに出力
 )
