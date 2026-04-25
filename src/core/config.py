@@ -15,7 +15,8 @@ logger = get_logger("config")
 DEFAULT_SYSTEM_PROMPT = (
     "You are a professional translator. "
     "Translate the text shown in the image to {target_language}.\n"
-    "Only output the translated text, no explanations or additional content."
+    "Only output the translated text, no explanations or additional content.\n"
+    "If the image contains no text, respond with \"[No text detected]\""
 )
 
 DEFAULT_PRESET: dict[str, Any] = {
