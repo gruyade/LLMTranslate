@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import base64
 import io
-import time
 from typing import TYPE_CHECKING
 
 import mss
 import mss.tools
-from PIL import Image
+from PIL import Image, ImageChops, ImageStat
 import pytesseract
 
 from .logger import get_logger
@@ -55,8 +54,8 @@ def images_differ(img_b64_a: str, img_b64_b: str, threshold: float = 0.05) -> bo
     """
     2枚の画像（base64）を比較し、変化があればTrueを返す。
 
-    MSE（Mean Squared Error）ベースの比較。
-    threshold: 0.0〜1.0（正規化済みMSE）
+    PIL.ImageChops + ImageStat による正規化 MSE ベースの比較。
+    threshold: 0.0〜1.0（正規化済み RMS）
     """
     if not img_b64_a or not img_b64_b:
         return True
@@ -69,14 +68,12 @@ def images_differ(img_b64_a: str, img_b64_b: str, threshold: float = 0.05) -> bo
         if img_a.size != img_b.size:
             return True
 
-        import numpy as np  # type: ignore
-
-        arr_a = np.array(img_a, dtype=float)
-        arr_b = np.array(img_b, dtype=float)
-        mse = float(np.mean((arr_a - arr_b) ** 2))
-        normalized = mse / (255.0 ** 2)
+        diff = ImageChops.difference(img_a, img_b)
+        stat = ImageStat.Stat(diff)
+        # stat.rms[0] は 0〜255 の RMS 差分。255 で正規化して threshold と比較
+        normalized = stat.rms[0] / 255.0
         differs = normalized > threshold
-        logger.debug("画像差分: mse=%.4f, threshold=%.4f, differs=%s", normalized, threshold, differs)
+        logger.debug("画像差分: rms=%.4f, threshold=%.4f, differs=%s", normalized, threshold, differs)
         return differs
     except Exception:
         return True

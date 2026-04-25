@@ -138,7 +138,7 @@ pyinstaller build.spec
 
 - **UI**: PySide6 (Qt for Python)
 - **キャプチャ**: mss
-- **画像処理**: Pillow, NumPy
+- **画像処理**: Pillow（差分検出に ImageChops / ImageStat を使用）
 - **通信**: httpx (Async)
 - **ビルド**: PyInstaller
 
