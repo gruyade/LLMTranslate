@@ -1,0 +1,16 @@
+﻿**/__pycache__
+dist
+build
+
+# ユーザー設定（実行時自動生成）
+config.json
+
+# Roo Code 開発ツール
+.roo/
+.roomodes
+
+# 開発計画ドキュメント
+plans/
+
+# 開発用スクリプト
+tools/
