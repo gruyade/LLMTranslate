@@ -138,7 +138,7 @@ The executable will be generated in `dist/LLMTranslate.exe`.
 
 - **UI**: PySide6 (Qt for Python)
 - **Capture**: mss
-- **Image Processing**: Pillow, NumPy
+- **Image Processing**: Pillow (ImageChops / ImageStat for change detection)
 - **Communication**: httpx (Async)
 - **Build**: PyInstaller
 
