@@ -66,14 +66,21 @@ LLMTranslate's interface is available in:
 ### Requirements
 
 - Windows 10/11
-- Python 3.11 or higher
 - (Recommended) [LM Studio](https://lmstudio.ai/) or an OpenAI API Key
 
-### Installation
+### Installation (Recommended)
+
+1. Download `LLMTranslate.zip` from the [Releases](https://github.com/gruyade/LLMTranslate/releases/latest) page.
+2. Extract the ZIP to any folder.
+3. Run `LLMTranslate.exe`.
+
+### Installation (Run from Source)
+
+Requires Python 3.11 or higher.
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/LLMTranslate.git
+   git clone https://github.com/gruyade/LLMTranslate.git
    cd LLMTranslate
    ```
 
@@ -82,11 +89,10 @@ LLMTranslate's interface is available in:
    pip install -r requirements.txt
    ```
 
-### Launch
-
-```bash
-python run.py
-```
+3. Launch:
+   ```bash
+   python run.py
+   ```
 
 ## 📖 Usage
 
@@ -143,11 +149,14 @@ Manage multiple configurations using the preset bar at the top of the settings d
 
 ```bash
 pip install pyinstaller
-python tools/generate_icon.py   # Generate Windows icons
 pyinstaller build.spec
 ```
 
-The executable will be generated in `dist/LLMTranslate.exe`.
+The output is generated in `dist/LLMTranslate/` (one-dir format). To create a distributable ZIP:
+
+```powershell
+Compress-Archive -Path "dist/LLMTranslate/*" -DestinationPath "dist/LLMTranslate.zip"
+```
 
 ## ⚠️ Disclaimer
 
