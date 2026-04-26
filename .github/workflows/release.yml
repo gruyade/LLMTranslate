@@ -32,11 +32,17 @@ jobs:
 
       - name: Verify build output
         run: |
-          if (!(Test-Path "dist/LLMTranslate.exe")) {
-            Write-Error "dist/LLMTranslate.exe not found"
+          if (!(Test-Path "dist/LLMTranslate/LLMTranslate.exe")) {
+            Write-Error "dist/LLMTranslate/LLMTranslate.exe not found"
             exit 1
           }
-          Write-Host "Build successful: $(Get-Item dist/LLMTranslate.exe | Select-Object -ExpandProperty Length) bytes"
+          Write-Host "Build successful"
+        shell: pwsh
+
+      - name: Package as ZIP
+        run: |
+          Compress-Archive -Path "dist/LLMTranslate/*" -DestinationPath "dist/LLMTranslate.zip"
+          Write-Host "ZIP created: $(Get-Item dist/LLMTranslate.zip | Select-Object -ExpandProperty Length) bytes"
         shell: pwsh
 
       - name: Generate release tag
@@ -61,10 +67,10 @@ jobs:
             **Branch:** ${{ github.ref_name }}
 
             ### インストール方法
-            1. `LLMTranslate.exe` をダウンロード
-            2. 任意のフォルダに配置して実行
+            1. `LLMTranslate.zip` をダウンロードして展開
+            2. `LLMTranslate.exe` を実行
 
             > **Note:** Tesseract OCR が別途必要な場合は [tesseract-ocr/tesseract](https://github.com/tesseract-ocr/tesseract) からインストール
-          files: dist/LLMTranslate.exe
+          files: dist/LLMTranslate.zip
           prerelease: false
           make_latest: true
