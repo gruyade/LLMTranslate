@@ -48,8 +48,6 @@ TRANSLATIONS = {
     "settings.max_height_ratio": "最大高度比例:",
     "settings.monitor_interval": "监控间隔:",
     "settings.threshold": "变化检测阈值:",
-    "settings.ocr_precheck": "使用 OCR 预检 (需要 Tesseract)",
-    "settings.tesseract_path": "Tesseract 路径:",
     "settings.log_level": "日志级别:",
     "settings.ui_language": "界面语言:",
     "settings.restart_required": "需要重启",

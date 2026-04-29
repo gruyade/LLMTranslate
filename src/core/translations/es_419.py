@@ -48,8 +48,6 @@ TRANSLATIONS = {
     "settings.max_height_ratio": "Proporción de altura máxima:",
     "settings.monitor_interval": "Intervalo de monitoreo:",
     "settings.threshold": "Umbral de cambio:",
-    "settings.ocr_precheck": "Usar verificación previa de OCR (requiere Tesseract)",
-    "settings.tesseract_path": "Ruta de Tesseract:",
     "settings.log_level": "Nivel de registro:",
     "settings.ui_language": "Idioma de la interfaz:",
     "settings.restart_required": "Reinicio requerido",

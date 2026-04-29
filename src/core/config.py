@@ -54,7 +54,6 @@ DEFAULT_PRESET: dict[str, Any] = {
     "monitor": {
         "interval": 2.0,
         "change_threshold": 0.05,
-        "use_ocr_precheck": True,
     },
 }
 

@@ -537,11 +537,6 @@ class SettingsDialog(QDialog):
         threshold_layout.addWidget(QLabel("(0.001 ~ 1.0)"))
         form.addRow(tr("settings.threshold"), threshold_layout)
 
-        form.addRow(QWidget()) # Spacer
-
-        self._use_ocr_precheck = QCheckBox(tr("settings.ocr_precheck"))
-        form.addRow(self._use_ocr_precheck)
-
         return widget
 
     # ------------------------------------------------------------------
@@ -598,7 +593,6 @@ class SettingsDialog(QDialog):
         m = data["monitor"]
         self._monitor_interval.setValue(m.get("interval", 2.0))
         self._change_threshold.setValue(m.get("change_threshold", 0.05))
-        self._use_ocr_precheck.setChecked(m.get("use_ocr_precheck", True))
 
         # ログレベル（グローバル設定 - プリセットに依存しない）
         log_level = self._config.get_log_level()
@@ -650,7 +644,6 @@ class SettingsDialog(QDialog):
             "monitor": {
                 "interval": self._monitor_interval.value(),
                 "change_threshold": self._change_threshold.value(),
-                "use_ocr_precheck": self._use_ocr_precheck.isChecked(),
             },
         }
 

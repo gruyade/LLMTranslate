@@ -202,16 +202,13 @@ class MonitorService(QObject):
 
         logger.debug("画像差分を検出。翻訳を実行します")
 
-        # OCR解析（テキスト有無 + 文字高さを1回の推論で取得）
-        mon_cfg = self._config.get_monitor_config()
-        use_precheck = mon_cfg.get("use_ocr_precheck", True)
-        if use_precheck or self._detect_font_size:
-            has_text, font_size_pt = ocr_analyze(image_b64)
-            if use_precheck and not has_text:
-                logger.debug("OCR事前チェック: テキストなし。スキップします")
-                return
-            if self._detect_font_size and font_size_pt:
-                self.font_size_detected.emit(font_size_pt)
+        # RapidOCR によるテキスト有無チェック + フォントサイズ検出（常時実行）
+        has_text, font_size_pt = ocr_analyze(image_b64)
+        if not has_text:
+            logger.debug("OCR事前チェック: テキストなし。スキップします")
+            return
+        if self._detect_font_size and font_size_pt:
+            self.font_size_detected.emit(font_size_pt)
 
         self._last_image_b64 = image_b64
         self._translating = True

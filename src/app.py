@@ -119,6 +119,7 @@ class LLMTranslateApp:
         self._overlay.mode_toggle_requested.connect(self._toggle_monitor)
         self._overlay.translate_requested.connect(self._trigger_translation)
         self._overlay.settings_requested.connect(self._open_settings)
+        self._overlay.view_mode_toggle_requested.connect(self._toggle_display_mode)
 
     def _init_result_window(self) -> None:
         display = self._config.get_display()
@@ -383,8 +384,9 @@ class LLMTranslateApp:
         """現在の設定に基づいて表示モードを適用する"""
         display = self._config.get_display()
         mode = display.get("result_display_mode", "bubble_window")
-        
-        if mode == "inline_overlay":
+        is_inline = mode == "inline_overlay"
+
+        if is_inline:
             self._overlay.enable_inline_result(
                 font_size=display.get("font_size", 14),
                 opacity=display.get("inline_opacity", 0.7),
@@ -392,11 +394,7 @@ class LLMTranslateApp:
             )
             # インラインモード時は別ウィンドウを隠す
             self._result.hide()
-            
-            # WDA_EXCLUDEFROMCAPTURE により映り込みなし → コールバック不要
-            self._monitor.set_pre_capture_callback(None)
-            self._monitor.set_post_capture_callback(None)
-            
+
             # フォントサイズ検出を有効化
             self._monitor.set_detect_font_size(True)
             # 重複接続を防ぐ（フラグで管理）
@@ -405,14 +403,26 @@ class LLMTranslateApp:
                 self._font_size_signal_connected = True
         else:
             self._overlay.disable_inline_result()
-
-            # WDA_EXCLUDEFROMCAPTURE により映り込みなし → コールバック不要
-            self._monitor.set_pre_capture_callback(None)
-            self._monitor.set_post_capture_callback(None)
             self._monitor.set_detect_font_size(False)
             if self._font_size_signal_connected:
                 self._monitor.font_size_detected.disconnect(self._on_font_size_detected)
                 self._font_size_signal_connected = False
+
+        self._overlay.set_inline_mode(is_inline)
+
+    def _toggle_display_mode(self) -> None:
+        """オーバーレイボタンから表示モードを切り替える"""
+        display = self._config.get_display()
+        current = display.get("result_display_mode", "bubble_window")
+        new_mode = "bubble_window" if current == "inline_overlay" else "inline_overlay"
+
+        # アクティブプリセットの display.result_display_mode を更新して保存
+        name = self._config.get_active_preset_name()
+        preset = self._config.get_active_preset()
+        preset["display"]["result_display_mode"] = new_mode
+        self._config.save_preset(name, preset)
+
+        self._apply_display_mode()
 
     def _on_font_size_detected(self, pt: float) -> None:
         """検出されたフォントサイズを適用する"""

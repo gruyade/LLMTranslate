@@ -19,7 +19,7 @@ Windows desktop screen translator using LLM (OpenAI-compatible APIs) with Vision
 - **Two Result Display Modes**:
   - **Bubble Window**: Translation results appear in a semi-transparent floating window next to the frame.
   - **Inline Overlay**: Translation results are displayed directly inside the capture frame as a semi-transparent overlay.
-- **On-Frame Controls**: Three buttons (⚙ Settings, ▶ Translate, A/M Mode) are displayed on the right side of the overlay frame for quick access.
+- **On-Frame Controls**: Four buttons (⚙ Settings, ▶ Translate, A/M Mode, ▣/□ View Mode) are displayed on the right side of the overlay frame for quick access.
 - **Manual Mode**: Execute translation via the on-frame button or system tray menu.
 - **Auto-Monitor Mode**: Automatically detect text changes in the frame and translate.
 - **Multi-language UI**: Supports 10 languages (English, Japanese, French, German, Thai, Chinese, Portuguese, Spanish, Korean).
@@ -109,13 +109,14 @@ Requires Python 3.11 or higher.
 
 ### Controls
 
-The overlay frame has three buttons on its right side:
+The overlay frame has four buttons on its right side:
 
 | Button | Icon | Description |
 |--------|------|-------------|
 | Settings | ⚙ | Opens the settings dialog |
 | Translate | ▶ / ■ | Executes translation (■ while translating) |
 | Mode | A / M | Toggles Auto-Monitor (A) / Manual (M) mode |
+| View Mode | ▣ / □ | Toggles display mode (▣ = switch to Inline Overlay, □ = switch to Separate Window) |
 
 - **Tray Menu**: Access settings, presets, and manual controls.
 

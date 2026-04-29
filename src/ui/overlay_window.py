@@ -204,6 +204,7 @@ class ResizeEdge(Enum):
     MODE_BTN = auto()
     EXEC_BTN = auto()
     SETTINGS_BTN = auto()
+    VIEW_MODE_BTN = auto()
 
 
 _EDGE_CURSORS: dict[ResizeEdge, Qt.CursorShape] = {
@@ -219,6 +220,7 @@ _EDGE_CURSORS: dict[ResizeEdge, Qt.CursorShape] = {
     ResizeEdge.MODE_BTN: Qt.PointingHandCursor,
     ResizeEdge.EXEC_BTN: Qt.PointingHandCursor,
     ResizeEdge.SETTINGS_BTN: Qt.PointingHandCursor,
+    ResizeEdge.VIEW_MODE_BTN: Qt.PointingHandCursor,
     ResizeEdge.NONE: Qt.ArrowCursor,
 }
 
@@ -235,6 +237,7 @@ class OverlayWindow(QWidget):
     mode_toggle_requested = Signal()
     translate_requested = Signal()
     settings_requested = Signal()
+    view_mode_toggle_requested = Signal()
 
     def __init__(
         self,
@@ -253,6 +256,7 @@ class OverlayWindow(QWidget):
         self._auto_mode = False
         self._is_operating = False
         self._is_translating = False
+        self._inline_mode = False
         self._inline_widget: InlineResultWidget | None = None
 
         self.setWindowFlags(
@@ -286,6 +290,11 @@ class OverlayWindow(QWidget):
 
     def set_auto_mode(self, enabled: bool):
         self._auto_mode = enabled
+        self.update()
+
+    def set_inline_mode(self, enabled: bool) -> None:
+        """表示モードボタンの表示状態を更新（inline_overlay=True, bubble_window=False）"""
+        self._inline_mode = enabled
         self.update()
 
     def set_translating(self, translating: bool):
@@ -449,6 +458,18 @@ class OverlayWindow(QWidget):
         painter.setPen(Qt.white)
         painter.drawText(mode_btn_rect, Qt.AlignCenter, tr("overlay.mode.auto") if self._auto_mode else tr("overlay.mode.manual"))
 
+        # 表示モード切替ボタン（インライン ↔ 別ウィンドウ）
+        view_mode_btn_rect = QRect(btn_x, btn_start_y + (_BTN_SIZE + btn_gap) * 3, _BTN_SIZE, _BTN_SIZE)
+        if self._inline_mode:
+            painter.setBrush(QColor("#9C27B0"))
+        else:
+            painter.setBrush(QColor("#455A64"))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(view_mode_btn_rect)
+        painter.setPen(Qt.white)
+        # インライン時は「□」（別ウィンドウへ切替）、別ウィンドウ時は「▣」（インラインへ切替）
+        painter.drawText(view_mode_btn_rect, Qt.AlignCenter, "□" if self._inline_mode else "▣")
+
         # リサイズハンドル（四隅）- ボタン描画の後に描画して最前面に表示
         # 右側ハンドルは赤枠右辺の外側（ボタンパネル上に重ねて描画）
         hs = HANDLE_SIZE  # = _HANDLE_MARGIN = 5
@@ -469,8 +490,8 @@ class OverlayWindow(QWidget):
     # マウスイベント
     # ------------------------------------------------------------------
 
-    def _btn_rects(self) -> tuple[QRect, QRect, QRect]:
-        """設定・実行・モードボタンの QRect を返す"""
+    def _btn_rects(self) -> tuple[QRect, QRect, QRect, QRect]:
+        """設定・実行・モード・表示モードボタンの QRect を返す"""
         w, h = self.width(), self.height()
         m = _HANDLE_MARGIN
         frame_w = w - _BTN_PANEL_W - m * 2
@@ -480,7 +501,8 @@ class OverlayWindow(QWidget):
         settings = QRect(btn_x, btn_start_y, _BTN_SIZE, _BTN_SIZE)
         exec_ = QRect(btn_x, btn_start_y + _BTN_SIZE + btn_gap, _BTN_SIZE, _BTN_SIZE)
         mode = QRect(btn_x, btn_start_y + (_BTN_SIZE + btn_gap) * 2, _BTN_SIZE, _BTN_SIZE)
-        return settings, exec_, mode
+        view_mode = QRect(btn_x, btn_start_y + (_BTN_SIZE + btn_gap) * 3, _BTN_SIZE, _BTN_SIZE)
+        return settings, exec_, mode, view_mode
 
     def _hit_test(self, pos: QPoint) -> ResizeEdge:
         x, y = pos.x(), pos.y()
@@ -513,13 +535,15 @@ class OverlayWindow(QWidget):
             return ResizeEdge.BOTTOM_RIGHT
 
         # ボタン判定
-        settings_rect, exec_rect, mode_rect = self._btn_rects()
+        settings_rect, exec_rect, mode_rect, view_mode_rect = self._btn_rects()
         if settings_rect.contains(pos):
             return ResizeEdge.SETTINGS_BTN
         if exec_rect.contains(pos):
             return ResizeEdge.EXEC_BTN
         if mode_rect.contains(pos):
             return ResizeEdge.MODE_BTN
+        if view_mode_rect.contains(pos):
+            return ResizeEdge.VIEW_MODE_BTN
 
         # ボタンパネル領域（ボタン以外）はNONE
         if x >= m + frame_w:
@@ -566,6 +590,9 @@ class OverlayWindow(QWidget):
             return
         if edge == ResizeEdge.SETTINGS_BTN:
             self.settings_requested.emit()
+            return
+        if edge == ResizeEdge.VIEW_MODE_BTN:
+            self.view_mode_toggle_requested.emit()
             return
 
         self._set_operating(True)
