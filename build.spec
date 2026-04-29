@@ -4,6 +4,7 @@
 
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 
@@ -13,6 +14,8 @@ a = Analysis(
     binaries=[],
     datas=[
         ('src/resources/icon.png', 'resources'),
+        # RapidOCR: config.yaml + models/*.onnx をバンドルに含める
+        *collect_data_files('rapidocr_onnxruntime'),
     ],
     hiddenimports=[
         'PySide6.QtCore',

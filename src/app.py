@@ -242,22 +242,24 @@ class LLMTranslateApp:
         self._action_translate.setEnabled(True) # キャンセル用に有効化
         self._overlay.set_translating(True)
         
+        # 常に ResultWindow にもデータを送る（バックグラウンドモード時は非表示で蓄積）
+        self._result.start_new_translation()
+        self._result.reposition(self._overlay.geometry())
+
         if self._get_display_mode() == "inline_overlay":
             widget = self._overlay.get_inline_widget()
             if widget:
                 widget.start_new_translation()
-        else:
-            self._result.start_new_translation()
-            self._result.reposition(self._overlay.geometry())
 
     def _on_translation_chunk(self, chunk: str) -> None:
         """ストリーミングチャンクを受信"""
+        # 常に ResultWindow にもデータを送る
+        self._result.append_chunk(chunk)
+
         if self._get_display_mode() == "inline_overlay":
             widget = self._overlay.get_inline_widget()
             if widget:
                 widget.append_chunk(chunk)
-        else:
-            self._result.append_chunk(chunk)
 
     def _on_translation_done(self, full_text: str) -> None:
         """翻訳完了"""
@@ -265,12 +267,13 @@ class LLMTranslateApp:
         self._action_translate.setEnabled(True)
         self._overlay.set_translating(False)
         
+        # 常に ResultWindow にもデータを送る
+        self._result.finish_translation()
+
         if self._get_display_mode() == "inline_overlay":
             widget = self._overlay.get_inline_widget()
             if widget:
                 widget.finish_translation()
-        else:
-            self._result.finish_translation()
 
     def _on_translation_error(self, message: str) -> None:
         """翻訳エラー"""
@@ -279,12 +282,13 @@ class LLMTranslateApp:
         self._overlay.set_translating(False)
         logger.warning("翻訳エラー: %s", message)
         
+        # 常に ResultWindow にもデータを送る
+        self._result.show_error(message)
+
         if self._get_display_mode() == "inline_overlay":
             widget = self._overlay.get_inline_widget()
             if widget:
                 widget.show_error(message)
-        else:
-            self._result.show_error(message)
 
     def _on_translation_cancelled(self) -> None:
         """翻訳キャンセル"""
@@ -293,14 +297,15 @@ class LLMTranslateApp:
         self._overlay.set_translating(False)
         # キャンセル時はバブルにその旨を表示
         msg = f"\n[{tr('result.cancelled') if hasattr(tr, 'result.cancelled') else 'Cancelled'}]"
+        # 常に ResultWindow にもデータを送る
+        self._result.append_chunk(msg)
+        self._result.finish_translation()
+
         if self._get_display_mode() == "inline_overlay":
             widget = self._overlay.get_inline_widget()
             if widget:
                 widget.append_chunk(msg)
                 widget.finish_translation()
-        else:
-            self._result.append_chunk(msg)
-            self._result.finish_translation()
 
     def _on_monitor_status_changed(self, running: bool) -> None:
         self._action_monitor.setChecked(running)
@@ -392,8 +397,16 @@ class LLMTranslateApp:
                 opacity=display.get("inline_opacity", 0.7),
                 max_height_ratio=display.get("inline_max_height_ratio", 0.4),
             )
-            # インラインモード時は別ウィンドウを隠す
-            self._result.hide()
+            # インラインモード時は ResultWindow をバックグラウンドモードに（非表示で蓄積）
+            self._result.set_background_mode(True)
+            # 過去の最新翻訳を InlineResultWidget に復元して表示
+            latest = self._result.get_latest_text()
+            if latest:
+                widget = self._overlay.get_inline_widget()
+                if widget:
+                    widget.start_new_translation()
+                    widget.append_chunk(latest)
+                    widget.finish_translation()
 
             # フォントサイズ検出を有効化
             self._monitor.set_detect_font_size(True)
@@ -407,6 +420,9 @@ class LLMTranslateApp:
             if self._font_size_signal_connected:
                 self._monitor.font_size_detected.disconnect(self._on_font_size_detected)
                 self._font_size_signal_connected = False
+            # bubble_window モードに戻す: バックグラウンドモード解除 → 履歴があれば即表示
+            self._result.set_background_mode(False)
+            self._result.show_if_has_history()
 
         self._overlay.set_inline_mode(is_inline)
 

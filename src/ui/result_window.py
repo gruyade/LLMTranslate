@@ -95,6 +95,9 @@ class BubbleWidget(QFrame):
     def _copy_text(self):
         QApplication.clipboard().setText(self._text_label.text())
 
+    def get_text(self) -> str:
+        return self._text_label.text()
+
     def append_text(self, chunk: str):
         self._text_label.setText(self._text_label.text() + chunk)
 
@@ -119,6 +122,8 @@ class ResultWindow(QWidget):
         self._resize_edge = Qt.Edge(0)
         # ユーザーが意図的に上にスクロールしたかどうかのフラグ
         self._user_scrolled_up = False
+        # バックグラウンドモード: データは蓄積するが表示しない
+        self._background_mode = False
 
         self.setWindowFlags(
             Qt.FramelessWindowHint
@@ -263,7 +268,8 @@ class ResultWindow(QWidget):
         error_bubble = BubbleWidget(f"⚠ {message}", self._font_size)
         error_bubble.setStyleSheet(error_bubble.styleSheet().replace("rgba(60, 60, 60, 180)", "rgba(100, 30, 30, 180)"))
         self._history_layout.insertWidget(self._history_layout.count() - 1, error_bubble)
-        self.show_and_scroll_to_bottom()
+        if not self._background_mode:
+            self.show_and_scroll_to_bottom()
 
     def clear_history(self):
         # Stretch以外のウィジェットを削除
@@ -273,8 +279,37 @@ class ResultWindow(QWidget):
                 item.widget().deleteLater()
         self._current_bubble = None
 
+    def set_background_mode(self, enabled: bool) -> None:
+        """バックグラウンドモード切替。Trueの時はデータを蓄積するが表示しない。"""
+        self._background_mode = enabled
+        if enabled:
+            self.hide()
+
+    def show_if_has_history(self) -> None:
+        """履歴バブルが1件以上あれば即座に表示して最下部にスクロールする。"""
+        # _history_layout は末尾に Stretch を持つため count() > 1 で履歴あり
+        if self._history_layout.count() > 1:
+            self.show()
+            from PySide6.QtCore import QTimer
+            def _scroll():
+                bar = self._scroll.verticalScrollBar()
+                bar.setValue(bar.maximum())
+            QTimer.singleShot(50, _scroll)
+
+    def get_latest_text(self) -> str:
+        """最新バブルのテキストを返す。履歴がなければ空文字。"""
+        # _history_layout: [bubble0, bubble1, ..., Stretch]
+        # Stretch は末尾なので count()-2 が最新バブルのインデックス
+        count = self._history_layout.count()
+        if count < 2:
+            return ""
+        item = self._history_layout.itemAt(count - 2)
+        if item and isinstance(item.widget(), BubbleWidget):
+            return item.widget().get_text()
+        return ""
+
     def show_and_scroll_to_bottom(self):
-        if not self.isVisible():
+        if not self._background_mode and not self.isVisible():
             self.show()
         # タイマーなしだとサイズ反映前にスクロールしてしまうため
         from PySide6.QtCore import QTimer
