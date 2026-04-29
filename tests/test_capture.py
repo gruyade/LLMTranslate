@@ -101,15 +101,24 @@ def test_images_differ_different_sizes():
 
 
 def test_has_text_content_with_text(sample_image_b64: str):
-    """テキストを含む画像で True を返すこと（pytesseract モック）"""
-    with patch("src.core.capture.pytesseract.image_to_string", return_value="Hello"):
+    """テキストを含む画像で True を返すこと（RapidOCR モック）"""
+    mock_engine = MagicMock()
+    # RapidOCR の返却形式: (result_list, _)
+    # result_list[i] = [bbox, text, score]
+    mock_engine.return_value = (
+        [[ [[0, 0], [10, 0], [10, 10], [0, 10]], "Hello", 0.9 ]],
+        None,
+    )
+    with patch("src.core.capture._get_rapid_engine", return_value=mock_engine):
         result = has_text_content(sample_image_b64)
     assert result is True
 
 
 def test_has_text_content_without_text(sample_image_b64: str):
     """テキストを含まない画像で False を返すこと"""
-    with patch("src.core.capture.pytesseract.image_to_string", return_value="   "):
+    mock_engine = MagicMock()
+    mock_engine.return_value = (None, None)
+    with patch("src.core.capture._get_rapid_engine", return_value=mock_engine):
         result = has_text_content(sample_image_b64)
     assert result is False
 
@@ -121,20 +130,9 @@ def test_has_text_content_empty_image():
 
 def test_has_text_content_error_handling(sample_image_b64: str):
     """OCR エラー時に True を返すこと（LLM 側に判定を任せる）"""
-    with patch(
-        "src.core.capture.pytesseract.image_to_string",
-        side_effect=Exception("tesseract not found"),
-    ):
+    mock_engine = MagicMock()
+    # _get_rapid_engine()(img) の (img) 呼び出し時に例外を発生させる
+    mock_engine.return_value.side_effect = Exception("OCR engine error")
+    with patch("src.core.capture._get_rapid_engine", return_value=mock_engine):
         result = has_text_content(sample_image_b64)
     assert result is True
-
-
-def test_has_text_content_sets_tesseract_path(sample_image_b64: str):
-    """tesseract_path が指定された場合に設定されること"""
-    import src.core.capture as capture_module
-
-    with patch("src.core.capture.pytesseract.image_to_string", return_value="text"):
-        has_text_content(sample_image_b64, tesseract_path="/usr/bin/tesseract")
-
-    import pytesseract
-    assert pytesseract.pytesseract.tesseract_cmd == "/usr/bin/tesseract"
