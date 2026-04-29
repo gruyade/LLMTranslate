@@ -47,12 +47,13 @@ DEFAULT_PRESET: dict[str, Any] = {
         "result_opacity": 0.9,
         "font_size": 14,
         "result_width": 350,
+        "result_display_mode": "bubble_window",
+        "inline_opacity": 0.7,
+        "inline_max_height_ratio": 0.4,
     },
     "monitor": {
         "interval": 2.0,
         "change_threshold": 0.05,
-        "use_ocr_precheck": False,
-        "tesseract_path": "",
     },
 }
 

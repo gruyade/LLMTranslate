@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import base64
 import io
+import statistics
+import threading
 from typing import TYPE_CHECKING
 
 import mss
 import mss.tools
 from PIL import Image, ImageChops, ImageStat
-import pytesseract
+from rapidocr_onnxruntime import RapidOCR as _RapidOCR
 
 from .logger import get_logger
 
@@ -17,6 +19,30 @@ if TYPE_CHECKING:
     from PySide6.QtWidgets import QWidget
 
 logger = get_logger("capture")
+
+_rapid_engine: _RapidOCR | None = None
+_engine_lock = threading.Lock()
+
+
+def _get_rapid_engine() -> _RapidOCR:
+    global _rapid_engine
+    if _rapid_engine is None:
+        with _engine_lock:
+            if _rapid_engine is None:
+                _rapid_engine = _RapidOCR()
+    return _rapid_engine
+
+
+def warmup_ocr_engine() -> None:
+    """RapidOCR エンジンをウォームアップする（初回推論の遅延を事前に解消）"""
+    try:
+        engine = _get_rapid_engine()
+        # 1x1 の白画像でダミー推論
+        dummy = Image.new("RGB", (64, 32), color=(255, 255, 255))
+        engine(dummy)
+        logger.info("RapidOCR ウォームアップ完了")
+    except Exception as e:
+        logger.warning("RapidOCR ウォームアップ失敗: %s", e)
 
 
 def capture_region(
@@ -79,20 +105,53 @@ def images_differ(img_b64_a: str, img_b64_b: str, threshold: float = 0.05) -> bo
         return True
 
 
-def has_text_content(image_b64: str, tesseract_path: str = "") -> bool:
-    """OCRで画像にテキストが含まれるか判定する"""
+def ocr_analyze(
+    image_b64: str,
+    screen_dpi: float = 96.0,
+) -> tuple[bool, float | None]:
+    """
+    RapidOCR を1回だけ呼び出し、テキスト有無と文字高さ(pt)を同時に返す。
+
+    Returns
+    -------
+    (has_text, font_size_pt)
+        has_text     : テキストが検出されたか
+        font_size_pt : 検出されたテキスト行の中央値高さ(pt)、検出不可なら None
+    """
     if not image_b64:
-        return False
+        return False, None
 
     try:
-        if tesseract_path:
-            pytesseract.pytesseract.tesseract_cmd = tesseract_path
-
         img = Image.open(io.BytesIO(base64.b64decode(image_b64)))
-        # OCR実行（設定された言語に関わらず、文字があるかだけ見たいのでデフォルト）
-        text = pytesseract.image_to_string(img)
-        return bool(text.strip())
+        result, _ = _get_rapid_engine()(img)
+        if not result:
+            return False, None
+
+        # result[i][0] = [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
+        heights = []
+        for item in result:
+            bbox = item[0]
+            ys = [p[1] for p in bbox]
+            heights.append(max(ys) - min(ys))
+
+        font_size_pt: float | None = None
+        if heights:
+            median_h = statistics.median(heights)
+            font_size_pt = round(median_h * 72.0 / screen_dpi, 1)
+
+        return True, font_size_pt
     except Exception as e:
-        logger.warning("テキスト検出エラー: %s", e)
-        # エラー時は念のためTrueを返し、LLM側に判定を任せる
-        return True
+        logger.warning("OCR解析エラー: %s", e)
+        # エラー時はテキストありとみなしてLLM側に判定を任せる
+        return True, None
+
+
+# 後方互換エイリアス（既存コードが直接呼んでいる場合に備える）
+def has_text_content(image_b64: str, tesseract_path: str = "") -> bool:
+    has_text, _ = ocr_analyze(image_b64)
+    return has_text
+
+
+def detect_text_height_pt(image_b64: str, screen_dpi: float = 96.0) -> float | None:
+    _, font_size_pt = ocr_analyze(image_b64, screen_dpi)
+    return font_size_pt

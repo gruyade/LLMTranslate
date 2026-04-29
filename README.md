@@ -16,8 +16,11 @@ Windows desktop screen translator using LLM (OpenAI-compatible APIs) with Vision
 
 - **Overlay Capture**: Display a resizable/movable overlay frame to capture screen areas. (Frame color is customizable in settings.)
 - **LLM-Powered Translation**: Send captured images to OpenAI-compatible APIs (LM Studio, OpenAI, etc.).
-- **Floating Result Window**: Translation results appear in a semi-transparent window next to the frame.
-- **Manual Mode**: Execute translation via the UI button or system tray menu.
+- **Two Result Display Modes**:
+  - **Bubble Window**: Translation results appear in a semi-transparent floating window next to the frame.
+  - **Inline Overlay**: Translation results are displayed directly inside the capture frame as a semi-transparent overlay.
+- **On-Frame Controls**: Four buttons (⚙ Settings, ▶ Translate, A/M Mode, ▣/□ View Mode) are displayed on the right side of the overlay frame for quick access.
+- **Manual Mode**: Execute translation via the on-frame button or system tray menu.
 - **Auto-Monitor Mode**: Automatically detect text changes in the frame and translate.
 - **Multi-language UI**: Supports 10 languages (English, Japanese, French, German, Thai, Chinese, Portuguese, Spanish, Korean).
 - **System Tray Integration**: Full control via the taskbar icon.
@@ -99,15 +102,22 @@ Requires Python 3.11 or higher.
 ### Basic Operation
 
 1. Launch the app to see the icon in the system tray.
-2. An overlay frame appears. Drag to move, resize via corners. (Frame color is customizable in settings.)
+2. An overlay frame appears. Drag the grab handle (top edge) to move, resize via corner handles. (Frame color is customizable in settings.)
 3. Align the frame with the text area you want to translate.
-4. Click the **Translation Button** on the overlay frame (or right-click tray icon -> "Execute Translation").
-5. The result appears in a floating window next to the frame.
+4. Click the **▶ Translate button** on the right side of the overlay frame (or right-click tray icon → "Execute Translation").
+5. The result appears according to the selected display mode (Bubble Window or Inline Overlay).
 
 ### Controls
 
-- **Translation Button (on Frame)**: Triggers manual translation.
-- **Auto-Monitor Toggle**: Enables/disables automatic detection.
+The overlay frame has four buttons on its right side:
+
+| Button | Icon | Description |
+|--------|------|-------------|
+| Settings | ⚙ | Opens the settings dialog |
+| Translate | ▶ / ■ | Executes translation (■ while translating) |
+| Mode | A / M | Toggles Auto-Monitor (A) / Manual (M) mode |
+| View Mode | ▣ / □ | Toggles display mode (▣ = switch to Inline Overlay, □ = switch to Separate Window) |
+
 - **Tray Menu**: Access settings, presets, and manual controls.
 
 ### Hotkeys (Note)
@@ -124,13 +134,22 @@ Right-click the tray icon -> "Settings..." to open the configuration dialog.
 
 ### Server Settings
 
-- **API Base URL**: OpenAI-compatible endpoint (e.g., LM Studio: `http://localhost:1234/v1`)
+- **API Base URL**: OpenAI-compatible endpoint (e.g., LM Studio: `http://localhost:1234/v1`). The resolved endpoint URL is previewed in real time below the input field.
 - **API Key**: Your API key (not required for LM Studio)
 - **Model**: Model ID (e.g., `gpt-4o`, `lmstudio-community/...`)
 
 ### Inference Parameters (LM Studio compatible)
 
 Adjust Temperature, Top P, Top K, Frequency Penalty, etc., to fine-tune the LLM output.
+
+### Display Settings
+
+- **Result Display Mode**: Choose between two modes:
+  - **Separate Window (Bubble)**: Translation results appear in a semi-transparent floating window next to the frame.
+  - **Inline Overlay**: Translation results are overlaid directly inside the capture frame.
+- **Inline Display Settings** (available when Inline Overlay is selected):
+  - **Opacity**: Transparency of the inline overlay panel.
+  - **Max Height Ratio**: Maximum height of the inline panel as a ratio of the frame height (10–80%).
 
 ### Presets
 
