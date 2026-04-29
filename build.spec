@@ -4,6 +4,7 @@
 
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 
@@ -13,6 +14,8 @@ a = Analysis(
     binaries=[],
     datas=[
         ('src/resources/icon.png', 'resources'),
+        # RapidOCR: config.yaml + models/*.onnx をバンドルに含める
+        *collect_data_files('rapidocr_onnxruntime'),
     ],
     hiddenimports=[
         'PySide6.QtCore',
@@ -25,9 +28,11 @@ a = Analysis(
         'PIL.ImageChops',
         'PIL.ImageStat',
         'httpx',
-        # pytesseract（capture.py でインポート）
-        'pytesseract',
-        'pytesseract.pytesseract',
+        # RapidOCR（capture.py で使用）
+        'rapidocr_onnxruntime',
+        'onnxruntime',
+        'cv2',
+        'numpy',
         # 翻訳モジュール（importlib動的インポートのためPyInstallerが自動検出できない）
         'src.core.translations',
         'src.core.translations.en',
@@ -46,7 +51,6 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         # --- サードパーティ（未使用） ---
-        'numpy',
         'tkinter',
         'matplotlib',
         'scipy',

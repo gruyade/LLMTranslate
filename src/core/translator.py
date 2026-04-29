@@ -15,6 +15,24 @@ from .logger import get_logger
 logger = get_logger("translator")
 
 
+def _normalize_base_url(url: str) -> str:
+    """URLパスが空またはルートのみの場合 /v1 を補完する。
+
+    Examples
+    --------
+    "http://localhost:1234"   -> "http://localhost:1234/v1"
+    "http://localhost:1234/"  -> "http://localhost:1234/v1"
+    "http://localhost:1234/v1" -> "http://localhost:1234/v1"
+    "http://localhost:1234/v2" -> "http://localhost:1234/v2"
+    """
+    from urllib.parse import urlparse
+    url = url.rstrip("/")
+    parsed = urlparse(url)
+    if not parsed.path or parsed.path == "/":
+        return url + "/v1"
+    return url
+
+
 class TranslationError(Exception):
     """API通信・レスポンス解析エラー"""
 
@@ -103,7 +121,8 @@ class TranslationClient:
 
     def _get_endpoint(self) -> str:
         server = self._config.get_server()
-        base = server.get("api_base_url", "http://localhost:1234/v1").rstrip("/")
+        raw = server.get("api_base_url", "http://localhost:1234/v1")
+        base = _normalize_base_url(raw)
         return f"{base}/chat/completions"
 
     def _get_timeout(self) -> float:

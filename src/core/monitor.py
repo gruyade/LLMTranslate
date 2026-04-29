@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Callable
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from .async_worker import AsyncTranslationWorker
-from .capture import capture_region, has_text_content, images_differ
+from .capture import capture_region, images_differ, ocr_analyze
 from .config import ConfigManager
 from .i18n import tr
 from .logger import get_logger
@@ -38,6 +38,7 @@ class MonitorService(QObject):
     translation_error = Signal(str)
     translation_cancelled = Signal()
     status_changed = Signal(bool)
+    font_size_detected = Signal(float)
 
     def __init__(self, config: ConfigManager, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -48,9 +49,12 @@ class MonitorService(QObject):
         self._running = False
         self._translating = False
         self._is_paused = False
+        self._detect_font_size = False
         self._last_image_b64: str = ""
         self._get_region: Callable[[], tuple[int, int, int, int]] | None = None
         self._hide_widget: QWidget | None = None
+        self._pre_capture_cb: Callable[[], None] | None = None
+        self._post_capture_cb: Callable[[], None] | None = None
 
         # ワーカーのシグナルを中継
         self._worker.translation_started.connect(self.translation_started)
@@ -73,6 +77,15 @@ class MonitorService(QObject):
     def set_hide_widget(self, widget: "QWidget") -> None:
         """キャプチャ時に一時非表示にするウィジェット（枠線映り込み防止）"""
         self._hide_widget = widget
+
+    def set_pre_capture_callback(self, cb: Callable[[], None] | None) -> None:
+        self._pre_capture_cb = cb
+
+    def set_post_capture_callback(self, cb: Callable[[], None] | None) -> None:
+        self._post_capture_cb = cb
+
+    def set_detect_font_size(self, enabled: bool) -> None:
+        self._detect_font_size = enabled
 
     def reload_config(self) -> None:
         """設定変更後にクライアントを再生成"""
@@ -166,8 +179,17 @@ class MonitorService(QObject):
 
         try:
             x, y, w, h = self._get_region()
-            # 点滅防止のため hide_widget（オーバーレイの透過操作）を渡さない
-            image_b64 = capture_region(x, y, w, h, hide_widget=None)
+            # キャプチャ前コールバック
+            if self._pre_capture_cb:
+                self._pre_capture_cb()
+            
+            try:
+                # 点滅防止のため hide_widget（オーバーレイの透過操作）を渡さない
+                image_b64 = capture_region(x, y, w, h, hide_widget=None)
+            finally:
+                # キャプチャ後コールバック
+                if self._post_capture_cb:
+                    self._post_capture_cb()
         except Exception as e:
             logger.error("キャプチャ中にエラー: %s", e)
             self.translation_error.emit(tr("error.capture", error=str(e)))
@@ -180,13 +202,13 @@ class MonitorService(QObject):
 
         logger.debug("画像差分を検出。翻訳を実行します")
 
-        # OCR事前チェック
-        mon_cfg = self._config.get_monitor_config()
-        if mon_cfg.get("use_ocr_precheck", False):
-            tess_path = mon_cfg.get("tesseract_path", "")
-            if not has_text_content(image_b64, tess_path):
-                logger.debug("OCR事前チェック: テキストなし。スキップします")
-                return
+        # RapidOCR によるテキスト有無チェック + フォントサイズ検出（常時実行）
+        has_text, font_size_pt = ocr_analyze(image_b64)
+        if not has_text:
+            logger.debug("OCR事前チェック: テキストなし。スキップします")
+            return
+        if self._detect_font_size and font_size_pt:
+            self.font_size_detected.emit(font_size_pt)
 
         self._last_image_b64 = image_b64
         self._translating = True

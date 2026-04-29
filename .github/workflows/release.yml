@@ -36,6 +36,10 @@ jobs:
             Write-Error "dist/LLMTranslate/LLMTranslate.exe not found"
             exit 1
           }
+          if (!(Test-Path "dist/LLMTranslate/_internal/rapidocr_onnxruntime/models/ch_PP-OCRv4_det_infer.onnx")) {
+            Write-Error "RapidOCR ONNX model not found in build output"
+            exit 1
+          }
           Write-Host "Build successful"
         shell: pwsh
 
@@ -69,8 +73,6 @@ jobs:
             ### インストール方法
             1. `LLMTranslate.zip` をダウンロードして展開
             2. `LLMTranslate.exe` を実行
-
-            > **Note:** Tesseract OCR が別途必要な場合は [tesseract-ocr/tesseract](https://github.com/tesseract-ocr/tesseract) からインストール
           files: dist/LLMTranslate.zip
           prerelease: false
           make_latest: true
