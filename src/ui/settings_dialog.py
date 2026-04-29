@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QRadioButton,
     QPushButton,
     QScrollArea,
     QSlider,
@@ -255,7 +256,14 @@ class SettingsDialog(QDialog):
 
         self._api_url = QLineEdit()
         self._api_url.setPlaceholderText("http://localhost:1234/v1")
+        self._api_url.textChanged.connect(self._update_endpoint_preview)
         form.addRow(tr("settings.api_base"), self._api_url)
+
+        # エンドポイントプレビューラベル
+        self._endpoint_preview = QLabel()
+        self._endpoint_preview.setStyleSheet("color: gray; font-size: 11px;")
+        self._endpoint_preview.setWordWrap(True)
+        form.addRow("", self._endpoint_preview)
 
         self._api_key = QLineEdit()
         self._api_key.setEchoMode(QLineEdit.Password)
@@ -281,6 +289,16 @@ class SettingsDialog(QDialog):
         form.addRow(tr("settings.log_level"), self._log_level)
 
         return widget
+
+    def _update_endpoint_preview(self, url: str) -> None:
+        """API URL入力に応じてエンドポイントのプレビューを更新する"""
+        from ..core.translator import _normalize_base_url
+        if url.strip():
+            normalized = _normalize_base_url(url.strip())
+            endpoint = f"{normalized}/chat/completions"
+            self._endpoint_preview.setText(f"→ {endpoint}")
+        else:
+            self._endpoint_preview.setText("")
 
     # ------------------------------------------------------------------
     # タブ2: 推論パラメータ
@@ -447,6 +465,50 @@ class SettingsDialog(QDialog):
         self._result_width.setSuffix(" px")
         form.addRow(tr("settings.result_width"), self._result_width)
 
+        form.addRow(QWidget()) # Spacer
+
+        # 表示モード
+        mode_group = QGroupBox(tr("settings.display_mode"))
+        mode_layout = QVBoxLayout(mode_group)
+        self._mode_bubble = QRadioButton(tr("settings.display_mode.bubble"))
+        self._mode_inline = QRadioButton(tr("settings.display_mode.inline"))
+        mode_layout.addWidget(self._mode_bubble)
+        mode_layout.addWidget(self._mode_inline)
+        form.addRow(mode_group)
+
+        # インライン表示設定
+        self._inline_settings = QGroupBox(tr("settings.inline_settings"))
+        inline_form = QFormLayout(self._inline_settings)
+        
+        # インライン不透明度
+        inline_opacity_layout = QHBoxLayout()
+        self._inline_opacity_slider = QSlider(Qt.Horizontal)
+        self._inline_opacity_slider.setRange(20, 100)
+        self._inline_opacity_label = QLabel("70%")
+        self._inline_opacity_slider.valueChanged.connect(
+            lambda v: self._inline_opacity_label.setText(f"{v}%")
+        )
+        inline_opacity_layout.addWidget(self._inline_opacity_slider)
+        inline_opacity_layout.addWidget(self._inline_opacity_label)
+        inline_form.addRow(tr("settings.opacity"), inline_opacity_layout)
+
+        # インライン最大高さ比率
+        inline_height_layout = QHBoxLayout()
+        self._inline_height_slider = QSlider(Qt.Horizontal)
+        self._inline_height_slider.setRange(10, 80)
+        self._inline_height_label = QLabel("40%")
+        self._inline_height_slider.valueChanged.connect(
+            lambda v: self._inline_height_label.setText(f"{v}%")
+        )
+        inline_height_layout.addWidget(self._inline_height_slider)
+        inline_height_layout.addWidget(self._inline_height_label)
+        inline_form.addRow(tr("settings.max_height_ratio"), inline_height_layout)
+
+        form.addRow(self._inline_settings)
+
+        # モード選択による有効/無効切り替え
+        self._mode_bubble.toggled.connect(lambda checked: self._inline_settings.setEnabled(not checked))
+
         return widget
 
     # ------------------------------------------------------------------
@@ -479,10 +541,6 @@ class SettingsDialog(QDialog):
 
         self._use_ocr_precheck = QCheckBox(tr("settings.ocr_precheck"))
         form.addRow(self._use_ocr_precheck)
-
-        self._tesseract_path = QLineEdit()
-        self._tesseract_path.setPlaceholderText("C:\\Program Files\\Tesseract-OCR\\tesseract.exe")
-        form.addRow(tr("settings.tesseract_path"), self._tesseract_path)
 
         return widget
 
@@ -527,11 +585,20 @@ class SettingsDialog(QDialog):
         self._font_size.setValue(d.get("font_size", 14))
         self._result_width.setValue(d.get("result_width", 350))
 
+        mode = d.get("result_display_mode", "bubble_window")
+        if mode == "inline_overlay":
+            self._mode_inline.setChecked(True)
+        else:
+            self._mode_bubble.setChecked(True)
+        
+        self._inline_opacity_slider.setValue(int(d.get("inline_opacity", 0.7) * 100))
+        self._inline_height_slider.setValue(int(d.get("inline_max_height_ratio", 0.4) * 100))
+        self._inline_settings.setEnabled(mode == "inline_overlay")
+
         m = data["monitor"]
         self._monitor_interval.setValue(m.get("interval", 2.0))
         self._change_threshold.setValue(m.get("change_threshold", 0.05))
-        self._use_ocr_precheck.setChecked(m.get("use_ocr_precheck", False))
-        self._tesseract_path.setText(m.get("tesseract_path", ""))
+        self._use_ocr_precheck.setChecked(m.get("use_ocr_precheck", True))
 
         # ログレベル（グローバル設定 - プリセットに依存しない）
         log_level = self._config.get_log_level()
@@ -576,12 +643,14 @@ class SettingsDialog(QDialog):
                 "result_opacity": self._opacity_slider.value() / 100.0,
                 "font_size": self._font_size.value(),
                 "result_width": self._result_width.value(),
+                "result_display_mode": "inline_overlay" if self._mode_inline.isChecked() else "bubble_window",
+                "inline_opacity": self._inline_opacity_slider.value() / 100.0,
+                "inline_max_height_ratio": self._inline_height_slider.value() / 100.0,
             },
             "monitor": {
                 "interval": self._monitor_interval.value(),
                 "change_threshold": self._change_threshold.value(),
                 "use_ocr_precheck": self._use_ocr_precheck.isChecked(),
-                "tesseract_path": self._tesseract_path.text().strip(),
             },
         }
 

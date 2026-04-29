@@ -25,9 +25,11 @@ a = Analysis(
         'PIL.ImageChops',
         'PIL.ImageStat',
         'httpx',
-        # pytesseract（capture.py でインポート）
-        'pytesseract',
-        'pytesseract.pytesseract',
+        # RapidOCR（capture.py で使用）
+        'rapidocr_onnxruntime',
+        'onnxruntime',
+        'cv2',
+        'numpy',
         # 翻訳モジュール（importlib動的インポートのためPyInstallerが自動検出できない）
         'src.core.translations',
         'src.core.translations.en',
@@ -46,7 +48,6 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         # --- サードパーティ（未使用） ---
-        'numpy',
         'tkinter',
         'matplotlib',
         'scipy',

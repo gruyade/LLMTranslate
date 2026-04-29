@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime
 from PySide6.QtCore import Qt, QRect, QPoint, QSize, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QCursor
@@ -18,6 +19,18 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.i18n import tr
+
+
+def _apply_wda_exclude_from_capture(hwnd: int) -> None:
+    """スクリーンキャプチャからウィンドウを除外する（Win32 WDA_EXCLUDEFROMCAPTURE）"""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        WDA_EXCLUDEFROMCAPTURE = 0x11
+        ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
+    except Exception:
+        pass
 
 # リサイズハンドルの当たり判定サイズ（px）
 HANDLE_SIZE = 8
@@ -104,6 +117,8 @@ class ResultWindow(QWidget):
         self._is_dragging = False
         self._drag_pos = QPoint()
         self._resize_edge = Qt.Edge(0)
+        # ユーザーが意図的に上にスクロールしたかどうかのフラグ
+        self._user_scrolled_up = False
 
         self.setWindowFlags(
             Qt.FramelessWindowHint
@@ -118,6 +133,10 @@ class ResultWindow(QWidget):
         self._build_ui()
         self.resize(result_width, 400)
         self.hide()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        _apply_wda_exclude_from_capture(int(self.winId()))
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
@@ -184,12 +203,21 @@ class ResultWindow(QWidget):
         self._scroll.setWidget(self._history_widget)
         layout.addWidget(self._scroll)
 
+        # スクロールバーの手動操作を検出してフラグを更新
+        self._scroll.verticalScrollBar().valueChanged.connect(self._on_scroll_value_changed)
+
         self._current_bubble: BubbleWidget | None = None
         self._current_buffer = ""
 
     # ------------------------------------------------------------------
     # 翻訳操作
     # ------------------------------------------------------------------
+
+    def _on_scroll_value_changed(self, value: int) -> None:
+        """スクロールバーの値変化を監視し、最下部かどうかを追跡する"""
+        bar = self._scroll.verticalScrollBar()
+        # 最下部付近（10px以内）なら自動スクロール許可、それ以外はユーザーが上にいる
+        self._user_scrolled_up = value < bar.maximum() - 10
 
     def start_new_translation(self):
         """翻訳プロセス開始 - バブル生成は遅延"""
@@ -250,9 +278,12 @@ class ResultWindow(QWidget):
             self.show()
         # タイマーなしだとサイズ反映前にスクロールしてしまうため
         from PySide6.QtCore import QTimer
-        QTimer.singleShot(50, lambda: self._scroll.verticalScrollBar().setValue(
-            self._scroll.verticalScrollBar().maximum()
-        ))
+        def _maybe_scroll():
+            # ユーザーが意図的に上にスクロールしている場合は位置を固定する
+            if not self._user_scrolled_up:
+                bar = self._scroll.verticalScrollBar()
+                bar.setValue(bar.maximum())
+        QTimer.singleShot(50, _maybe_scroll)
 
     # ------------------------------------------------------------------
     # 移動・リサイズ

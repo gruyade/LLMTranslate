@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
 
 from PySide6.QtCore import QRect, Qt, QObject, Signal, Slot
@@ -14,7 +15,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .core.capture import warmup_ocr_engine
 from .core.config import ConfigManager
+from .ui.overlay_window import _BTN_PANEL_W, _HANDLE_MARGIN
 from .core.logger import get_logger
 from .core.monitor import MonitorService
 from .core.i18n import tr
@@ -68,6 +71,7 @@ class LLMTranslateApp:
         self._config = config
         self._settings_dialog: SettingsDialog | None = None
         self._translating = False
+        self._font_size_signal_connected = False
 
         logger.info("LLMTranslateApp 起動")
 
@@ -88,6 +92,12 @@ class LLMTranslateApp:
             self._overlay.set_auto_mode(True)
         else:
             self._overlay.set_auto_mode(False)
+
+        # 初期表示モードの反映
+        self._apply_display_mode()
+
+        # RapidOCR エンジンをバックグラウンドでウォームアップ（初回翻訳の遅延を解消）
+        threading.Thread(target=warmup_ocr_engine, daemon=True).start()
 
     # ------------------------------------------------------------------
     # 初期化
@@ -212,31 +222,54 @@ class LLMTranslateApp:
         # 結果ウィンドウの位置を更新
         overlay_rect = self._overlay.geometry()
         self._result.reposition(overlay_rect)
-        # 設定に保存
+        # 設定に保存（ボタンパネル幅・マージンを除いたフレーム幅を保存）
         geo = self._overlay.geometry()
+        m = _HANDLE_MARGIN
         self._config.set_overlay(
-            geo.x(), geo.y(), geo.width(), geo.height(),
+            geo.x() + m, geo.y() + m,
+            geo.width() - _BTN_PANEL_W - m * 2,
+            geo.height() - m * 2,
             self._overlay.isVisible()
         )
+
+    def _get_display_mode(self) -> str:
+        return self._config.get_display().get("result_display_mode", "bubble_window")
 
     def _on_translation_started(self) -> None:
         """翻訳開始"""
         self._translating = True
         self._action_translate.setEnabled(True) # キャンセル用に有効化
         self._overlay.set_translating(True)
-        self._result.start_new_translation()
-        self._result.reposition(self._overlay.geometry())
+        
+        if self._get_display_mode() == "inline_overlay":
+            widget = self._overlay.get_inline_widget()
+            if widget:
+                widget.start_new_translation()
+        else:
+            self._result.start_new_translation()
+            self._result.reposition(self._overlay.geometry())
 
     def _on_translation_chunk(self, chunk: str) -> None:
         """ストリーミングチャンクを受信"""
-        self._result.append_chunk(chunk)
+        if self._get_display_mode() == "inline_overlay":
+            widget = self._overlay.get_inline_widget()
+            if widget:
+                widget.append_chunk(chunk)
+        else:
+            self._result.append_chunk(chunk)
 
     def _on_translation_done(self, full_text: str) -> None:
         """翻訳完了"""
         self._translating = False
         self._action_translate.setEnabled(True)
         self._overlay.set_translating(False)
-        self._result.finish_translation()
+        
+        if self._get_display_mode() == "inline_overlay":
+            widget = self._overlay.get_inline_widget()
+            if widget:
+                widget.finish_translation()
+        else:
+            self._result.finish_translation()
 
     def _on_translation_error(self, message: str) -> None:
         """翻訳エラー"""
@@ -244,7 +277,13 @@ class LLMTranslateApp:
         self._action_translate.setEnabled(True)
         self._overlay.set_translating(False)
         logger.warning("翻訳エラー: %s", message)
-        self._result.show_error(message)
+        
+        if self._get_display_mode() == "inline_overlay":
+            widget = self._overlay.get_inline_widget()
+            if widget:
+                widget.show_error(message)
+        else:
+            self._result.show_error(message)
 
     def _on_translation_cancelled(self) -> None:
         """翻訳キャンセル"""
@@ -252,8 +291,15 @@ class LLMTranslateApp:
         self._action_translate.setEnabled(True)
         self._overlay.set_translating(False)
         # キャンセル時はバブルにその旨を表示
-        self._result.append_chunk(f"\n[{tr('result.cancelled') if hasattr(tr, 'result.cancelled') else 'Cancelled'}]")
-        self._result.finish_translation()
+        msg = f"\n[{tr('result.cancelled') if hasattr(tr, 'result.cancelled') else 'Cancelled'}]"
+        if self._get_display_mode() == "inline_overlay":
+            widget = self._overlay.get_inline_widget()
+            if widget:
+                widget.append_chunk(msg)
+                widget.finish_translation()
+        else:
+            self._result.append_chunk(msg)
+            self._result.finish_translation()
 
     def _on_monitor_status_changed(self, running: bool) -> None:
         self._action_monitor.setChecked(running)
@@ -286,8 +332,11 @@ class LLMTranslateApp:
             self._overlay.show()
             self._action_overlay.setChecked(True)
         geo = self._overlay.geometry()
+        m = _HANDLE_MARGIN
         self._config.set_overlay(
-            geo.x(), geo.y(), geo.width(), geo.height(),
+            geo.x() + m, geo.y() + m,
+            geo.width() - _BTN_PANEL_W - m * 2,
+            geo.height() - m * 2,
             self._overlay.isVisible()
         )
 
@@ -314,6 +363,9 @@ class LLMTranslateApp:
         self._overlay.set_border_color(display.get("border_color", "#FF0000"))
         self._overlay.set_border_width(display.get("border_width", 2))
 
+        # 表示モードの反映
+        self._apply_display_mode()
+
         # 結果ウィンドウの更新
         self._result.set_opacity(display.get("result_opacity", 0.9))
         self._result.set_font_size(display.get("font_size", 14))
@@ -327,13 +379,59 @@ class LLMTranslateApp:
             self._monitor.stop()
             self._monitor.start()
 
+    def _apply_display_mode(self) -> None:
+        """現在の設定に基づいて表示モードを適用する"""
+        display = self._config.get_display()
+        mode = display.get("result_display_mode", "bubble_window")
+        
+        if mode == "inline_overlay":
+            self._overlay.enable_inline_result(
+                font_size=display.get("font_size", 14),
+                opacity=display.get("inline_opacity", 0.7),
+                max_height_ratio=display.get("inline_max_height_ratio", 0.4),
+            )
+            # インラインモード時は別ウィンドウを隠す
+            self._result.hide()
+            
+            # WDA_EXCLUDEFROMCAPTURE により映り込みなし → コールバック不要
+            self._monitor.set_pre_capture_callback(None)
+            self._monitor.set_post_capture_callback(None)
+            
+            # フォントサイズ検出を有効化
+            self._monitor.set_detect_font_size(True)
+            # 重複接続を防ぐ（フラグで管理）
+            if not self._font_size_signal_connected:
+                self._monitor.font_size_detected.connect(self._on_font_size_detected)
+                self._font_size_signal_connected = True
+        else:
+            self._overlay.disable_inline_result()
+
+            # WDA_EXCLUDEFROMCAPTURE により映り込みなし → コールバック不要
+            self._monitor.set_pre_capture_callback(None)
+            self._monitor.set_post_capture_callback(None)
+            self._monitor.set_detect_font_size(False)
+            if self._font_size_signal_connected:
+                self._monitor.font_size_detected.disconnect(self._on_font_size_detected)
+                self._font_size_signal_connected = False
+
+    def _on_font_size_detected(self, pt: float) -> None:
+        """検出されたフォントサイズを適用する"""
+        widget = self._overlay.get_inline_widget()
+        if widget:
+            # 最小8pt, 最大72ptに制限
+            clamped_pt = max(8, min(72, int(pt)))
+            widget.set_font_size(clamped_pt)
+
     def _quit(self) -> None:
         """アプリケーションを終了"""
         logger.info("アプリケーション終了")
-        # 終了前に設定を保存
+        # 終了前に設定を保存（ボタンパネル幅・マージンを除いたフレーム幅を保存）
         geo = self._overlay.geometry()
+        m = _HANDLE_MARGIN
         self._config.set_overlay(
-            geo.x(), geo.y(), geo.width(), geo.height(),
+            geo.x() + m, geo.y() + m,
+            geo.width() - _BTN_PANEL_W - m * 2,
+            geo.height() - m * 2,
             self._overlay.isVisible()
         )
         self._monitor.stop()
