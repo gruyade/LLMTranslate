@@ -10,6 +10,7 @@ TRANSLATIONS = {
     "result.clear_history": "履歴をクリア",
     "result.copy": "コピー",
     "result.delete": "削除",
+    "result.cancelled": "キャンセル",
     "settings.title": "LLMTranslate - 設定",
     "settings.tab.server": "サーバー",
     "settings.tab.inference": "推論パラメータ",

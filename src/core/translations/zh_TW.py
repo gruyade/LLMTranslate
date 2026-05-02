@@ -10,6 +10,7 @@ TRANSLATIONS = {
     "result.clear_history": "清除歷史",
     "result.copy": "複製",
     "result.delete": "刪除",
+    "result.cancelled": "已取消",
     "settings.title": "LLMTranslate - 設置",
     "settings.tab.server": "服務器",
     "settings.tab.inference": "推理參數",

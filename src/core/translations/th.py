@@ -10,6 +10,7 @@ TRANSLATIONS = {
     "result.clear_history": "ล้างประวัติ",
     "result.copy": "คัดลอก",
     "result.delete": "ลบ",
+    "result.cancelled": "ยกเลิกแล้ว",
     "settings.title": "LLMTranslate - การตั้งค่า",
     "settings.tab.server": "เซิร์ฟเวอร์",
     "settings.tab.inference": "พารามิเตอร์การอนุมาน",

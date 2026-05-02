@@ -10,6 +10,7 @@ TRANSLATIONS = {
     "result.clear_history": "기록 삭제",
     "result.copy": "복사",
     "result.delete": "삭제",
+    "result.cancelled": "취소됨",
     "settings.title": "LLMTranslate - 설정",
     "settings.tab.server": "서버",
     "settings.tab.inference": "추론 파라미터",

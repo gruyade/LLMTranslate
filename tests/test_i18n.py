@@ -113,3 +113,38 @@ def test_reset_creates_new_instance():
     I18nManager.reset()
     b = I18nManager()
     assert a is not b
+
+
+# ------------------------------------------------------------------
+# result.cancelled キー — 全言語での存在・非空・命名規則
+# ------------------------------------------------------------------
+
+SUPPORTED_LANGUAGES = ["en", "ja", "fr", "de", "th", "zh_CN", "zh_TW", "pt_BR", "es_419", "ko"]
+
+
+@pytest.mark.parametrize("lang", SUPPORTED_LANGUAGES)
+def test_result_cancelled_resolves_to_non_empty_string(lang: str):
+    """全10言語で result.cancelled が非空文字列に解決されること
+
+    Validates: Requirements 5.1, 5.4
+    """
+    setup_i18n(lang)
+    result = tr("result.cancelled")
+    assert isinstance(result, str)
+    assert len(result) > 0
+    # キー文字列そのものが返っていないこと（未定義フォールバックでない）
+    assert result != "result.cancelled"
+
+
+@pytest.mark.parametrize("lang", SUPPORTED_LANGUAGES)
+def test_result_cancelled_key_follows_naming_convention(lang: str):
+    """result.cancelled が result.* 名前空間に準拠していること
+
+    Validates: Requirements 5.3
+    """
+    key = "result.cancelled"
+    assert key.startswith("result.")
+    # キーが実際に翻訳辞書に存在することを確認
+    setup_i18n(lang)
+    result = tr(key)
+    assert result != key, f"Language '{lang}' is missing the '{key}' translation"

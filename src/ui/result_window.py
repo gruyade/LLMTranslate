@@ -115,6 +115,8 @@ class ResultWindow(QWidget):
         self._is_dragging = False
         self._drag_pos = QPoint()
         self._resize_edge = Qt.Edge(0)
+        self._resize_start_pos: QPoint | None = None
+        self._resize_start_size: QSize | None = None
         # ユーザーが意図的に上にスクロールしたかどうかのフラグ
         self._user_scrolled_up = False
         # バックグラウンドモード: データは蓄積するが表示しない
@@ -328,16 +330,18 @@ class ResultWindow(QWidget):
                 pos = event.position().toPoint()
                 bw = HANDLE_SIZE + 10
                 if pos.x() > self.width() - bw and pos.y() > self.height() - bw:
-                    self._resize_edge = Qt.BottomEdge | Qt.RightEdge # 便宜上
+                    self._resize_edge = Qt.BottomEdge | Qt.RightEdge  # 便宜上
+                    self._resize_start_pos = event.globalPosition().toPoint()
+                    self._resize_start_size = self.size()
 
     def mouseMoveEvent(self, event):
         if self._is_dragging:
             self.move(event.globalPosition().toPoint() - self._drag_pos)
-        elif self._resize_edge:
-            diff = event.globalPosition().toPoint() - (self.pos() + QPoint(self.width(), self.height()))
-            new_size = self.size() + QSize(diff.x(), diff.y())
-            if new_size.width() >= MIN_WIN_SIZE.width() and new_size.height() >= MIN_WIN_SIZE.height():
-                self.resize(new_size)
+        elif self._resize_edge and self._resize_start_pos is not None and self._resize_start_size is not None:
+            delta = event.globalPosition().toPoint() - self._resize_start_pos
+            new_w = max(MIN_WIN_SIZE.width(), self._resize_start_size.width() + delta.x())
+            new_h = max(MIN_WIN_SIZE.height(), self._resize_start_size.height() + delta.y())
+            self.resize(new_w, new_h)
         else:
             # カーソル変更
             pos = event.position().toPoint()
@@ -352,6 +356,8 @@ class ResultWindow(QWidget):
     def mouseReleaseEvent(self, event):
         self._is_dragging = False
         self._resize_edge = Qt.Edge(0)
+        self._resize_start_pos = None
+        self._resize_start_size = None
 
     # ------------------------------------------------------------------
     # 位置・外観
