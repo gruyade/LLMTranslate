@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from unittest.mock import MagicMock
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -31,6 +32,13 @@ def _make_frame_rect(w: int, h: int) -> QRect:
     frame_w = w - _BTN_PANEL_W - m * 2
     frame_h = h - m * 2
     return QRect(m, m, frame_w, frame_h)
+
+
+def _make_expander() -> HoverExpander:
+    """テスト用スタブ付き HoverExpander を生成"""
+    stub = MagicMock()
+    stub.update.return_value = None
+    return HoverExpander(stub)
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +86,7 @@ class TestDistanceBasedHoverExpansion:
         grab_cy = float(frame_rect.y())
         dist = math.hypot(mx - grab_cx, my - grab_cy)
 
-        expander = HoverExpander()
+        expander = _make_expander()
         expander.update_mouse_position(QPoint(mx, my), frame_rect)
 
         expected = 1.0 if dist <= _HOVER_DISTANCE else 0.0
@@ -121,7 +129,7 @@ class TestDistanceBasedHoverExpansion:
         cx, cy = corner_centers[corner_idx]
         dist = math.hypot(mx - cx, my - cy)
 
-        expander = HoverExpander()
+        expander = _make_expander()
         expander.update_mouse_position(QPoint(mx, my), frame_rect)
 
         expected = 1.0 if dist <= _HOVER_DISTANCE else 0.0
