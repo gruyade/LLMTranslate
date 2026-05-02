@@ -123,7 +123,8 @@ def ocr_analyze(
 
     try:
         img = Image.open(io.BytesIO(base64.b64decode(image_b64)))
-        result, _ = _get_rapid_engine()(img)
+        result, elapse = _get_rapid_engine()(img)
+        logger.debug("OCR推論時間: %s", elapse)
         if not result:
             return False, None
 
