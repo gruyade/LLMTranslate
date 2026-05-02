@@ -7,7 +7,10 @@ from enum import Enum, auto
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPen, QCursor, QFont
+from PySide6.QtGui import (
+    QColor, QPainter, QPen, QCursor, QFont, QFontMetrics,
+    QLinearGradient,
+)
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QScrollArea, QLabel
 
 from ..core.i18n import tr
@@ -22,13 +25,13 @@ HANDLE_SIZE = 5
 MIN_SIZE = QSize(80, 60)
 NO_TEXT_PATTERN = "[No text detected]"
 
-# フレーム右側のボタンパネル幅（ボタン3個を縦並び）
+# フレーム右側のボタンパネル幅（ボタン4個を縦並び）
 _BTN_PANEL_W = 28
 # ボタンサイズ
 _BTN_SIZE = 20
 # グラブハンドルの幅・高さ
-_GRAB_W = 30
-_GRAB_H = 6
+_GRAB_W = 36
+_GRAB_H = 5
 # ハンドルをフレーム外側に表示するためのマージン（px）
 _HANDLE_MARGIN = 5
 
@@ -98,6 +101,8 @@ class InlineResultWidget(QWidget):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        # DWM 角丸を無効化（Windows 11 のウィンドウ角丸を除去）
+        _apply_dwm_no_border(int(self.winId()))
         # キャプチャから除外（映り込み・ちらつき防止）
         apply_wda_exclude_from_capture(int(self.winId()))
 
@@ -112,7 +117,7 @@ class InlineResultWidget(QWidget):
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._scroll.setAlignment(Qt.AlignTop)
         self._scroll.setStyleSheet(
-            "QScrollArea { background: rgba(0, 0, 0, 160); border: none; border-radius: 4px; }"
+            "QScrollArea { background: rgba(0, 0, 0, 160); border: none; }"
         )
 
         self._content_label = QLabel()
@@ -138,7 +143,7 @@ class InlineResultWidget(QWidget):
         self._opacity = opacity
         alpha = int(opacity * 255)
         self._scroll.setStyleSheet(
-            f"QScrollArea {{ background: rgba(0, 0, 0, {alpha}); border: none; border-radius: 4px; }}"
+            f"QScrollArea {{ background: rgba(0, 0, 0, {alpha}); border: none; }}"
         )
 
     def set_max_height_ratio(self, ratio: float) -> None:
@@ -399,80 +404,89 @@ class OverlayWindow(QWidget):
             int(m + frame_w - half), int(m + frame_h - half),
         )
 
-        # グラブハンドル（上辺中央、フレーム枠線の外側）
+        # グラブハンドル（上辺中央、フレーム枠線の外側）- 角丸ピル型
         handle_color = QColor(self._border_color)
-        handle_color.setAlpha(200)
+        handle_color.setAlpha(180)
         painter.setBrush(handle_color)
         painter.setPen(Qt.NoPen)
         gh_x = m + (frame_w - _GRAB_W) // 2
-        painter.drawRect(gh_x, m - _GRAB_H, _GRAB_W, _GRAB_H)
+        painter.drawRoundedRect(gh_x, m - _GRAB_H, _GRAB_W, _GRAB_H, 2, 2)
 
         # ボタンパネル（フレーム右外側に縦並び、上寄せ）
         btn_x = m + frame_w + (_BTN_PANEL_W - _BTN_SIZE) // 2
         btn_gap = 4
-        btn_start_y = m + 8  # 上寄せ（固定マージン8px）
+        btn_start_y = m + 6
+
+        # --- ボタン描画ヘルパー ---
+        def _draw_btn(rect: QRect, base_color: QColor, text: str, font_size: int = 9) -> None:
+            """角丸四角ボタンを描画し、テキストを正確にセンタリング"""
+            cx = rect.center().x()
+            cy = rect.center().y()
+            radius = 4  # 角丸半径
+
+            # 上→下のリニアグラデーション
+            grad = QLinearGradient(rect.x(), rect.y(), rect.x(), rect.y() + rect.height())
+            lighter = QColor(base_color)
+            lighter.setRed(min(255, lighter.red() + 30))
+            lighter.setGreen(min(255, lighter.green() + 30))
+            lighter.setBlue(min(255, lighter.blue() + 30))
+            grad.setColorAt(0.0, lighter)
+            grad.setColorAt(1.0, base_color)
+            painter.setBrush(grad)
+
+            # 微細な明るい縁取り
+            border_pen = QPen(QColor(255, 255, 255, 40), 1)
+            painter.setPen(border_pen)
+            painter.drawRoundedRect(rect, radius, radius)
+
+            # テキスト描画（フォントメトリクスで正確にセンタリング）
+            f = QFont("Segoe UI Symbol", font_size)
+            f.setBold(True)
+            painter.setFont(f)
+            painter.setPen(QColor(255, 255, 255, 240))
+            fm = QFontMetrics(f)
+            tw = fm.horizontalAdvance(text)
+            th = fm.ascent()
+            tx = cx - tw // 2
+            ty = cy + (th - fm.descent()) // 2
+            painter.drawText(tx, ty, text)
 
         # 設定ボタン
         settings_btn_rect = QRect(btn_x, btn_start_y, _BTN_SIZE, _BTN_SIZE)
-        painter.setBrush(QColor("#607D8B"))
-        painter.setPen(Qt.NoPen)
-        painter.drawEllipse(settings_btn_rect)
-        painter.setPen(Qt.white)
-        font = painter.font()
-        font.setPointSize(8)
-        font.setBold(True)
-        painter.setFont(font)
-        painter.drawText(settings_btn_rect, Qt.AlignCenter, "⚙")
+        _draw_btn(settings_btn_rect, QColor("#546E7A"), "⚙", 11)
 
         # 翻訳実行ボタン
         exec_btn_rect = QRect(btn_x, btn_start_y + _BTN_SIZE + btn_gap, _BTN_SIZE, _BTN_SIZE)
-        if self._is_translating:
-            painter.setBrush(QColor("#F44336"))
-        else:
-            painter.setBrush(QColor("#4CAF50"))
-        painter.setPen(Qt.NoPen)
-        painter.drawEllipse(exec_btn_rect)
-        painter.setPen(Qt.white)
-        painter.drawText(exec_btn_rect, Qt.AlignCenter, "■" if self._is_translating else "▶")
+        exec_color = QColor("#E53935") if self._is_translating else QColor("#43A047")
+        exec_text = "■" if self._is_translating else "▶"
+        _draw_btn(exec_btn_rect, exec_color, exec_text, 10)
 
         # モード切替ボタン
         mode_btn_rect = QRect(btn_x, btn_start_y + (_BTN_SIZE + btn_gap) * 2, _BTN_SIZE, _BTN_SIZE)
-        if self._auto_mode:
-            painter.setBrush(QColor("#2196F3"))
-        else:
-            painter.setBrush(QColor("#757575"))
-        painter.setPen(Qt.NoPen)
-        painter.drawEllipse(mode_btn_rect)
-        painter.setPen(Qt.white)
-        painter.drawText(mode_btn_rect, Qt.AlignCenter, tr("overlay.mode.auto") if self._auto_mode else tr("overlay.mode.manual"))
+        mode_color = QColor("#1E88E5") if self._auto_mode else QColor("#616161")
+        mode_text = tr("overlay.mode.auto") if self._auto_mode else tr("overlay.mode.manual")
+        _draw_btn(mode_btn_rect, mode_color, mode_text, 10)
 
         # 表示モード切替ボタン（インライン ↔ 別ウィンドウ）
         view_mode_btn_rect = QRect(btn_x, btn_start_y + (_BTN_SIZE + btn_gap) * 3, _BTN_SIZE, _BTN_SIZE)
-        if self._inline_mode:
-            painter.setBrush(QColor("#9C27B0"))
-        else:
-            painter.setBrush(QColor("#455A64"))
-        painter.setPen(Qt.NoPen)
-        painter.drawEllipse(view_mode_btn_rect)
-        painter.setPen(Qt.white)
-        # インライン時は「□」（別ウィンドウへ切替）、別ウィンドウ時は「▣」（インラインへ切替）
-        painter.drawText(view_mode_btn_rect, Qt.AlignCenter, "□" if self._inline_mode else "▣")
+        view_color = QColor("#8E24AA") if self._inline_mode else QColor("#37474F")
+        view_text = "□" if self._inline_mode else "▣"
+        _draw_btn(view_mode_btn_rect, view_color, view_text, 10)
 
-        # リサイズハンドル（四隅）- ボタン描画の後に描画して最前面に表示
-        # 右側ハンドルは赤枠右辺の外側（ボタンパネル上に重ねて描画）
-        hs = HANDLE_SIZE  # = _HANDLE_MARGIN = 5
+        # リサイズハンドル（四隅）- 角丸ドット
+        hs = HANDLE_SIZE
         handle_color2 = QColor(self._border_color)
-        handle_color2.setAlpha(200)
+        handle_color2.setAlpha(180)
         painter.setBrush(handle_color2)
         painter.setPen(Qt.NoPen)
         corners = [
-            QRect(m - hs, m - hs, hs, hs),                          # 左上
-            QRect(m + frame_w, m - hs, hs, hs),                     # 右上（赤枠右辺外側）
-            QRect(m - hs, m + frame_h, hs, hs),                     # 左下
-            QRect(m + frame_w, m + frame_h, hs, hs),                # 右下（赤枠右辺外側）
+            QRect(m - hs, m - hs, hs, hs),
+            QRect(m + frame_w, m - hs, hs, hs),
+            QRect(m - hs, m + frame_h, hs, hs),
+            QRect(m + frame_w, m + frame_h, hs, hs),
         ]
         for corner in corners:
-            painter.drawRect(corner)
+            painter.drawRoundedRect(corner, 1, 1)
 
     # ------------------------------------------------------------------
     # マウスイベント
@@ -485,7 +499,7 @@ class OverlayWindow(QWidget):
         frame_w = w - _BTN_PANEL_W - m * 2
         btn_x = m + frame_w + (_BTN_PANEL_W - _BTN_SIZE) // 2
         btn_gap = 4
-        btn_start_y = m + 8  # 上寄せ
+        btn_start_y = m + 6
         settings = QRect(btn_x, btn_start_y, _BTN_SIZE, _BTN_SIZE)
         exec_ = QRect(btn_x, btn_start_y + _BTN_SIZE + btn_gap, _BTN_SIZE, _BTN_SIZE)
         mode = QRect(btn_x, btn_start_y + (_BTN_SIZE + btn_gap) * 2, _BTN_SIZE, _BTN_SIZE)
