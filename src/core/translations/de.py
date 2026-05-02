@@ -10,6 +10,7 @@ TRANSLATIONS = {
     "result.clear_history": "Verlauf löschen",
     "result.copy": "Kopieren",
     "result.delete": "Löschen",
+    "result.cancelled": "Abgebrochen",
     "settings.title": "LLMTranslate - Einstellungen",
     "settings.tab.server": "Server",
     "settings.tab.inference": "Inferenz",
