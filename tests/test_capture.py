@@ -220,6 +220,48 @@ def test_ocr_analyze_custom_dpi(sample_image_b64: str):
 
 
 # ------------------------------------------------------------------
+# ocr_analyze — 画像縮小テスト
+# ------------------------------------------------------------------
+
+
+def test_ocr_analyze_downscale_large_image():
+    """大きな画像が縮小されてOCRに渡され、フォントサイズがスケール補正されること"""
+    # 1600x1200 の画像を作成（max_long_side=800 で 0.5 倍に縮小される）
+    img = Image.new("RGB", (1600, 1200), color=(255, 255, 255))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    large_b64 = base64.b64encode(buf.read()).decode("utf-8")
+
+    mock_engine = MagicMock()
+    # 縮小後の画像上で高さ10pxのテキスト → 元画像では20px
+    mock_engine.return_value = (
+        [[ [[0, 0], [50, 0], [50, 10], [0, 10]], "Hello", 0.9 ]],
+        None,
+    )
+    with patch("src.core.capture._get_rapid_engine", return_value=mock_engine):
+        has_text, font_size = ocr_analyze(large_b64, max_long_side=800)
+    assert has_text is True
+    # 10px / 0.5 = 20px → 20 * 72 / 96 = 15.0pt
+    assert font_size == 15.0
+
+
+def test_ocr_analyze_no_downscale_small_image(sample_image_b64: str):
+    """小さな画像は縮小されないこと"""
+    mock_engine = MagicMock()
+    mock_engine.return_value = (
+        [[ [[0, 0], [10, 0], [10, 5], [0, 5]], "Hi", 0.9 ]],
+        None,
+    )
+    with patch("src.core.capture._get_rapid_engine", return_value=mock_engine):
+        # 10x10画像、max_long_side=800 → 縮小なし、scale=1.0
+        has_text, font_size = ocr_analyze(sample_image_b64, max_long_side=800)
+    assert has_text is True
+    # 5px * 72 / 96 = 3.8pt（縮小補正なし）
+    assert font_size == 3.8
+
+
+# ------------------------------------------------------------------
 # detect_text_height_pt（後方互換エイリアス）
 # ------------------------------------------------------------------
 

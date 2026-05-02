@@ -272,6 +272,8 @@ def test_get_monitor_config(tmp_config: ConfigManager):
     monitor = tmp_config.get_monitor_config()
     assert "interval" in monitor
     assert "change_threshold" in monitor
+    assert "ocr_pre_check" in monitor
+    assert monitor["ocr_pre_check"] is True
 
 
 # ------------------------------------------------------------------

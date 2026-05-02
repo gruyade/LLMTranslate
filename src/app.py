@@ -215,6 +215,8 @@ class LLMTranslateApp:
         overlay_rect = self._overlay.geometry()
         self._result.reposition(overlay_rect)
         self._save_overlay_timer.start()
+        # 領域変更時にフォントサイズキャッシュを無効化（次回 OCR で再検出）
+        self._service.invalidate_font_size_cache()
 
     def _save_overlay_state(self) -> None:
         """オーバーレイ位置・サイズを設定ファイルに保存"""

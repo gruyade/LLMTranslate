@@ -537,6 +537,11 @@ class SettingsDialog(QDialog):
         threshold_layout.addWidget(QLabel("(0.001 ~ 1.0)"))
         form.addRow(tr("settings.threshold"), threshold_layout)
 
+        # OCR 事前チェック
+        self._ocr_pre_check = QCheckBox(tr("settings.ocr_pre_check.label"))
+        self._ocr_pre_check.setToolTip(tr("settings.ocr_pre_check.tooltip"))
+        form.addRow(tr("settings.ocr_pre_check"), self._ocr_pre_check)
+
         return widget
 
     # ------------------------------------------------------------------
@@ -590,6 +595,7 @@ class SettingsDialog(QDialog):
         m = data["monitor"]
         self._monitor_interval.setValue(m.get("interval", 2.0))
         self._change_threshold.setValue(m.get("change_threshold", 0.05))
+        self._ocr_pre_check.setChecked(m.get("ocr_pre_check", True))
 
         # ログレベル（グローバル設定 - プリセットに依存しない）
         log_level = self._config.get_log_level()
@@ -641,6 +647,7 @@ class SettingsDialog(QDialog):
             "monitor": {
                 "interval": self._monitor_interval.value(),
                 "change_threshold": self._change_threshold.value(),
+                "ocr_pre_check": self._ocr_pre_check.isChecked(),
             },
         }
 

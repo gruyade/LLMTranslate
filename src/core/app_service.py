@@ -141,6 +141,10 @@ class AppService(QObject):
         """キャプチャ領域を返すコールバックを設定"""
         self._monitor.set_region_provider(provider)
 
+    def invalidate_font_size_cache(self) -> None:
+        """フォントサイズキャッシュを無効化（領域リサイズ時に呼ぶ）"""
+        self._monitor.invalidate_font_size_cache()
+
     # ------------------------------------------------------------------
     # 表示モード操作
     # ------------------------------------------------------------------

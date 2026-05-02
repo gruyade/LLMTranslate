@@ -108,9 +108,13 @@ def images_differ(img_b64_a: str, img_b64_b: str, threshold: float = 0.05) -> bo
 def ocr_analyze(
     image_b64: str,
     screen_dpi: float = 96.0,
+    max_long_side: int = 800,
 ) -> tuple[bool, float | None]:
     """
     RapidOCR を1回だけ呼び出し、テキスト有無と文字高さ(pt)を同時に返す。
+
+    画像の長辺が *max_long_side* を超える場合は縮小してから推論し、
+    フォントサイズは元画像スケールに補正して返す。
 
     Returns
     -------
@@ -123,6 +127,18 @@ def ocr_analyze(
 
     try:
         img = Image.open(io.BytesIO(base64.b64decode(image_b64)))
+
+        # --- 画像縮小（OCR 高速化） ---
+        long_side = max(img.size)
+        scale = 1.0
+        if max_long_side > 0 and long_side > max_long_side:
+            scale = max_long_side / long_side
+            new_size = (max(1, int(img.width * scale)), max(1, int(img.height * scale)))
+            img = img.resize(new_size, Image.LANCZOS)
+            logger.debug("OCR用に画像を縮小: %dx%d → %dx%d (scale=%.2f)",
+                         int(new_size[0] / scale), int(new_size[1] / scale),
+                         new_size[0], new_size[1], scale)
+
         result, elapse = _get_rapid_engine()(img)
         logger.debug("OCR推論時間: %s", elapse)
         if not result:
@@ -137,7 +153,8 @@ def ocr_analyze(
 
         font_size_pt: float | None = None
         if heights:
-            median_h = statistics.median(heights)
+            # 縮小した場合は元画像スケールに補正
+            median_h = statistics.median(heights) / scale
             font_size_pt = round(median_h * 72.0 / screen_dpi, 1)
 
         return True, font_size_pt
