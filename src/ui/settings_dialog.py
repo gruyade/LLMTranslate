@@ -292,9 +292,9 @@ class SettingsDialog(QDialog):
 
     def _update_endpoint_preview(self, url: str) -> None:
         """API URL入力に応じてエンドポイントのプレビューを更新する"""
-        from ..core.translator import _normalize_base_url
+        from ..core.translator import normalize_base_url
         if url.strip():
-            normalized = _normalize_base_url(url.strip())
+            normalized = normalize_base_url(url.strip())
             endpoint = f"{normalized}/chat/completions"
             self._endpoint_preview.setText(f"→ {endpoint}")
         else:

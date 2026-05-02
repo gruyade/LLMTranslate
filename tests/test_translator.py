@@ -2,29 +2,37 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from typing import Any
 
 import httpx
 import pytest
 import respx
 
-from src.core.config import ConfigManager
+from src.core.config import ConfigManager, DEFAULT_PRESET
 from src.core.translator import TranslationClient, TranslationError
 
 
-@pytest.fixture
-def config(tmp_path: Path, monkeypatch) -> ConfigManager:
-    """テスト用 ConfigManager"""
-    config_file = tmp_path / "config.json"
-    monkeypatch.setattr("src.core.config._get_config_path", lambda: config_file)
-    monkeypatch.setattr("src.core.logger.LOG_DIR", tmp_path / "logs")
-    monkeypatch.setattr("src.core.logger.LOG_FILE", tmp_path / "logs" / "test.log")
-    return ConfigManager()
+def _make_snapshot(**overrides: Any) -> dict[str, Any]:
+    """テスト用の設定スナップショットを生成"""
+    import copy
+    snapshot = copy.deepcopy(DEFAULT_PRESET)
+    for section, values in overrides.items():
+        if section in snapshot and isinstance(values, dict):
+            snapshot[section].update(values)
+        else:
+            snapshot[section] = values
+    return snapshot
 
 
 @pytest.fixture
-def client(config: ConfigManager) -> TranslationClient:
-    return TranslationClient(config)
+def snapshot() -> dict[str, Any]:
+    """デフォルト設定スナップショット"""
+    return _make_snapshot()
+
+
+@pytest.fixture
+def client(snapshot: dict[str, Any]) -> TranslationClient:
+    return TranslationClient(snapshot)
 
 
 # ------------------------------------------------------------------
@@ -61,22 +69,19 @@ def test_build_payload_image_in_user_message(client: TranslationClient):
     assert "mybase64" in image_part["image_url"]["url"]
 
 
-def test_build_payload_parameters(config: ConfigManager, client: TranslationClient):
+def test_build_payload_parameters(snapshot: dict[str, Any], client: TranslationClient):
     """推論パラメータが正しく設定されること"""
     payload = client._build_payload("data")
-    inf = config.get_inference()
+    inf = snapshot["inference"]
     assert payload["temperature"] == inf["temperature"]
     assert payload["max_tokens"] == inf["max_tokens"]
     assert payload["top_p"] == inf["top_p"]
 
 
-def test_build_payload_stop_sequences(config: ConfigManager):
+def test_build_payload_stop_sequences():
     """ストップシーケンスが正しくペイロードに含まれること"""
-    preset = config.get_active_preset()
-    preset["inference"]["stop_sequences"] = "END,STOP"
-    config.save_preset("default", preset)
-
-    client = TranslationClient(config)
+    snapshot = _make_snapshot(inference={"stop_sequences": "END,STOP"})
+    client = TranslationClient(snapshot)
     payload = client._build_payload("data")
     assert "stop" in payload
     assert "END" in payload["stop"]
@@ -95,13 +100,10 @@ def test_get_headers_without_api_key(client: TranslationClient):
     assert "Authorization" not in headers
 
 
-def test_get_headers_with_api_key(config: ConfigManager):
+def test_get_headers_with_api_key():
     """APIキー設定時に Authorization ヘッダーが含まれること"""
-    preset = config.get_active_preset()
-    preset["server"]["api_key"] = "sk-test-key"
-    config.save_preset("default", preset)
-
-    client = TranslationClient(config)
+    snapshot = _make_snapshot(server={"api_key": "sk-test-key"})
+    client = TranslationClient(snapshot)
     headers = client._get_headers()
     assert headers.get("Authorization") == "Bearer sk-test-key"
 

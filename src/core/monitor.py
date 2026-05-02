@@ -88,8 +88,7 @@ class MonitorService(QObject):
         self._detect_font_size = enabled
 
     def reload_config(self) -> None:
-        """設定変更後にクライアントを再生成"""
-        self._worker.reload_client()
+        """設定変更後に監視タイマーを再起動"""
         if self._running:
             self._restart_timer()
 
