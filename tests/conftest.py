@@ -7,6 +7,16 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
+from PySide6.QtWidgets import QApplication
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """セッション全体で共有する QApplication インスタンス"""
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
 
 
 @pytest.fixture

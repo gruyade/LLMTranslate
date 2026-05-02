@@ -190,3 +190,124 @@ def test_set_log_level(tmp_config: ConfigManager):
     """ログレベルの変更が保存されること"""
     tmp_config.set_log_level("DEBUG")
     assert tmp_config.get_log_level() == "DEBUG"
+
+
+# ------------------------------------------------------------------
+# get_preset
+# ------------------------------------------------------------------
+
+
+def test_get_preset_returns_merged_data(tmp_config: ConfigManager):
+    """get_presetがデフォルト値とマージされたデータを返すこと"""
+    preset = tmp_config.get_preset("default")
+    assert "server" in preset
+    assert "inference" in preset
+    assert "display" in preset
+
+
+def test_get_preset_nonexistent_returns_defaults(tmp_config: ConfigManager):
+    """存在しないプリセット名でもデフォルト値が返ること"""
+    preset = tmp_config.get_preset("nonexistent")
+    assert preset["server"]["api_base_url"] == DEFAULT_PRESET["server"]["api_base_url"]
+
+
+# ------------------------------------------------------------------
+# set_active_preset — エッジケース
+# ------------------------------------------------------------------
+
+
+def test_set_active_preset_nonexistent_is_noop(tmp_config: ConfigManager):
+    """存在しないプリセット名の設定は無視されること"""
+    tmp_config.set_active_preset("does_not_exist")
+    assert tmp_config.get_active_preset_name() == "default"
+
+
+# ------------------------------------------------------------------
+# rename_preset — エッジケース
+# ------------------------------------------------------------------
+
+
+def test_rename_active_preset_updates_active(tmp_config: ConfigManager):
+    """アクティブプリセットをリネームするとactive_presetも追従すること"""
+    tmp_config.save_preset("my_preset", DEFAULT_PRESET.copy())
+    tmp_config.set_active_preset("my_preset")
+    tmp_config.rename_preset("my_preset", "renamed_preset")
+    assert tmp_config.get_active_preset_name() == "renamed_preset"
+
+
+def test_rename_nonexistent_preset_is_noop(tmp_config: ConfigManager):
+    """存在しないプリセットのリネームは無視されること"""
+    tmp_config.rename_preset("ghost", "new_ghost")
+    assert "new_ghost" not in tmp_config.get_preset_names()
+
+
+# ------------------------------------------------------------------
+# セクション getter
+# ------------------------------------------------------------------
+
+
+def test_get_inference_config(tmp_config: ConfigManager):
+    """推論設定の getter が正しい値を返すこと"""
+    inf = tmp_config.get_inference()
+    assert "temperature" in inf
+    assert "max_tokens" in inf
+
+
+def test_get_prompt_config(tmp_config: ConfigManager):
+    """プロンプト設定の getter が正しい値を返すこと"""
+    prompt = tmp_config.get_prompt()
+    assert "system_prompt" in prompt
+    assert "target_language" in prompt
+
+
+def test_get_display_config(tmp_config: ConfigManager):
+    """表示設定の getter が正しい値を返すこと"""
+    display = tmp_config.get_display()
+    assert "border_color" in display
+    assert "font_size" in display
+
+
+def test_get_monitor_config(tmp_config: ConfigManager):
+    """監視設定の getter が正しい値を返すこと"""
+    monitor = tmp_config.get_monitor_config()
+    assert "interval" in monitor
+    assert "change_threshold" in monitor
+    assert "ocr_pre_check" in monitor
+    assert monitor["ocr_pre_check"] is True
+
+
+# ------------------------------------------------------------------
+# auto_monitor
+# ------------------------------------------------------------------
+
+
+def test_set_auto_monitor(tmp_config: ConfigManager):
+    """自動監視モードの設定が保存されること"""
+    tmp_config.set_auto_monitor(True)
+    assert tmp_config.get_auto_monitor() is True
+    tmp_config.set_auto_monitor(False)
+    assert tmp_config.get_auto_monitor() is False
+
+
+# ------------------------------------------------------------------
+# ui_language
+# ------------------------------------------------------------------
+
+
+def test_set_ui_language(tmp_config: ConfigManager):
+    """UI言語の設定が保存されること"""
+    tmp_config.set_ui_language("ja")
+    assert tmp_config.get_ui_language() == "ja"
+
+
+# ------------------------------------------------------------------
+# _deep_merge — deepcopy検証
+# ------------------------------------------------------------------
+
+
+def test_deep_merge_does_not_share_nested_refs():
+    """マージ結果のネストdictがbaseと参照を共有しないこと"""
+    base = {"a": {"x": [1, 2, 3]}}
+    result = _deep_merge(base, {})
+    result["a"]["x"].append(4)
+    assert base["a"]["x"] == [1, 2, 3]
