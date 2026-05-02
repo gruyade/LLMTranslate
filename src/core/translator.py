@@ -9,13 +9,12 @@ from typing import Any
 
 import httpx
 
-from .config import ConfigManager
 from .logger import get_logger
 
 logger = get_logger("translator")
 
 
-def _normalize_base_url(url: str) -> str:
+def normalize_base_url(url: str) -> str:
     """URLパスが空またはルートのみの場合 /v1 を補完する。
 
     Examples
@@ -33,6 +32,10 @@ def _normalize_base_url(url: str) -> str:
     return url
 
 
+# 後方互換エイリアス
+_normalize_base_url = normalize_base_url
+
+
 class TranslationError(Exception):
     """API通信・レスポンス解析エラー"""
 
@@ -41,10 +44,15 @@ class TranslationClient:
     """
     OpenAI Chat Completions API（Vision対応）クライアント。
     ストリーミング・非ストリーミング両対応。
+
+    設定スナップショット（dict）を受け取って動作する。
+    スレッドセーフティのため、ConfigManagerを直接参照しない。
     """
 
-    def __init__(self, config: ConfigManager) -> None:
-        self._config = config
+    def __init__(self, config_snapshot: dict[str, Any]) -> None:
+        self._server = config_snapshot.get("server", {})
+        self._inference = config_snapshot.get("inference", {})
+        self._prompt = config_snapshot.get("prompt", {})
 
     # ------------------------------------------------------------------
     # 内部ヘルパー
@@ -52,9 +60,9 @@ class TranslationClient:
 
     def _build_payload(self, image_b64: str) -> dict[str, Any]:
         """APIリクエストのペイロードを構築"""
-        server = self._config.get_server()
-        inf = self._config.get_inference()
-        prompt_cfg = self._config.get_prompt()
+        server = self._server
+        inf = self._inference
+        prompt_cfg = self._prompt
 
         target_lang = prompt_cfg.get("target_language", "Japanese")
         system_prompt = prompt_cfg.get("system_prompt", "").replace(
@@ -112,21 +120,19 @@ class TranslationClient:
         return payload
 
     def _get_headers(self) -> dict[str, str]:
-        server = self._config.get_server()
         headers = {"Content-Type": "application/json"}
-        api_key = server.get("api_key", "")
+        api_key = self._server.get("api_key", "")
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         return headers
 
     def _get_endpoint(self) -> str:
-        server = self._config.get_server()
-        raw = server.get("api_base_url", "http://localhost:1234/v1")
-        base = _normalize_base_url(raw)
+        raw = self._server.get("api_base_url", "http://localhost:1234/v1")
+        base = normalize_base_url(raw)
         return f"{base}/chat/completions"
 
     def _get_timeout(self) -> float:
-        return float(self._config.get_server().get("timeout", 60))
+        return float(self._server.get("timeout", 60))
 
     # ------------------------------------------------------------------
     # 公開API

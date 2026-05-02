@@ -2,29 +2,37 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from typing import Any
 
 import httpx
 import pytest
 import respx
 
-from src.core.config import ConfigManager
+from src.core.config import ConfigManager, DEFAULT_PRESET
 from src.core.translator import TranslationClient, TranslationError
 
 
-@pytest.fixture
-def config(tmp_path: Path, monkeypatch) -> ConfigManager:
-    """テスト用 ConfigManager"""
-    config_file = tmp_path / "config.json"
-    monkeypatch.setattr("src.core.config._get_config_path", lambda: config_file)
-    monkeypatch.setattr("src.core.logger.LOG_DIR", tmp_path / "logs")
-    monkeypatch.setattr("src.core.logger.LOG_FILE", tmp_path / "logs" / "test.log")
-    return ConfigManager()
+def _make_snapshot(**overrides: Any) -> dict[str, Any]:
+    """テスト用の設定スナップショットを生成"""
+    import copy
+    snapshot = copy.deepcopy(DEFAULT_PRESET)
+    for section, values in overrides.items():
+        if section in snapshot and isinstance(values, dict):
+            snapshot[section].update(values)
+        else:
+            snapshot[section] = values
+    return snapshot
 
 
 @pytest.fixture
-def client(config: ConfigManager) -> TranslationClient:
-    return TranslationClient(config)
+def snapshot() -> dict[str, Any]:
+    """デフォルト設定スナップショット"""
+    return _make_snapshot()
+
+
+@pytest.fixture
+def client(snapshot: dict[str, Any]) -> TranslationClient:
+    return TranslationClient(snapshot)
 
 
 # ------------------------------------------------------------------
@@ -61,22 +69,19 @@ def test_build_payload_image_in_user_message(client: TranslationClient):
     assert "mybase64" in image_part["image_url"]["url"]
 
 
-def test_build_payload_parameters(config: ConfigManager, client: TranslationClient):
+def test_build_payload_parameters(snapshot: dict[str, Any], client: TranslationClient):
     """推論パラメータが正しく設定されること"""
     payload = client._build_payload("data")
-    inf = config.get_inference()
+    inf = snapshot["inference"]
     assert payload["temperature"] == inf["temperature"]
     assert payload["max_tokens"] == inf["max_tokens"]
     assert payload["top_p"] == inf["top_p"]
 
 
-def test_build_payload_stop_sequences(config: ConfigManager):
+def test_build_payload_stop_sequences():
     """ストップシーケンスが正しくペイロードに含まれること"""
-    preset = config.get_active_preset()
-    preset["inference"]["stop_sequences"] = "END,STOP"
-    config.save_preset("default", preset)
-
-    client = TranslationClient(config)
+    snapshot = _make_snapshot(inference={"stop_sequences": "END,STOP"})
+    client = TranslationClient(snapshot)
     payload = client._build_payload("data")
     assert "stop" in payload
     assert "END" in payload["stop"]
@@ -95,13 +100,10 @@ def test_get_headers_without_api_key(client: TranslationClient):
     assert "Authorization" not in headers
 
 
-def test_get_headers_with_api_key(config: ConfigManager):
+def test_get_headers_with_api_key():
     """APIキー設定時に Authorization ヘッダーが含まれること"""
-    preset = config.get_active_preset()
-    preset["server"]["api_key"] = "sk-test-key"
-    config.save_preset("default", preset)
-
-    client = TranslationClient(config)
+    snapshot = _make_snapshot(server={"api_key": "sk-test-key"})
+    client = TranslationClient(snapshot)
     headers = client._get_headers()
     assert headers.get("Authorization") == "Bearer sk-test-key"
 
@@ -214,3 +216,102 @@ async def test_translate_stream_skips_empty_delta(client: TranslationClient, sam
         chunks.append(chunk)
 
     assert chunks == ["text"]
+
+
+# ------------------------------------------------------------------
+# normalize_base_url
+# ------------------------------------------------------------------
+
+from src.core.translator import normalize_base_url
+
+
+def test_normalize_base_url_no_path():
+    """パスなしURLに /v1 が補完されること"""
+    assert normalize_base_url("http://localhost:1234") == "http://localhost:1234/v1"
+
+
+def test_normalize_base_url_root_only():
+    """ルートパスのみのURLに /v1 が補完されること"""
+    assert normalize_base_url("http://localhost:1234/") == "http://localhost:1234/v1"
+
+
+def test_normalize_base_url_with_v1():
+    """既に /v1 がある場合はそのまま返ること"""
+    assert normalize_base_url("http://localhost:1234/v1") == "http://localhost:1234/v1"
+
+
+def test_normalize_base_url_with_v1_trailing_slash():
+    """/v1/ の末尾スラッシュが除去されること"""
+    assert normalize_base_url("http://localhost:1234/v1/") == "http://localhost:1234/v1"
+
+
+def test_normalize_base_url_custom_path():
+    """カスタムパスはそのまま保持されること"""
+    assert normalize_base_url("http://example.com/api/v2") == "http://example.com/api/v2"
+
+
+# ------------------------------------------------------------------
+# ペイロード構築 — エッジケース
+# ------------------------------------------------------------------
+
+
+def test_build_payload_empty_system_prompt():
+    """システムプロンプトが空の場合、systemメッセージが含まれないこと"""
+    snapshot = _make_snapshot(prompt={"system_prompt": "", "target_language": "Japanese"})
+    client = TranslationClient(snapshot)
+    payload = client._build_payload("data")
+    roles = [m["role"] for m in payload["messages"]]
+    assert "system" not in roles
+
+
+def test_build_payload_top_k_zero():
+    """top_k=0 の場合、ペイロードに top_k が含まれないこと"""
+    snapshot = _make_snapshot(inference={"top_k": 0})
+    client = TranslationClient(snapshot)
+    payload = client._build_payload("data")
+    assert "top_k" not in payload
+
+
+def test_build_payload_repeat_penalty_one():
+    """repeat_penalty=1.0 の場合、ペイロードに含まれないこと"""
+    snapshot = _make_snapshot(inference={"repeat_penalty": 1.0})
+    client = TranslationClient(snapshot)
+    payload = client._build_payload("data")
+    assert "repeat_penalty" not in payload
+
+
+def test_build_payload_seed_negative():
+    """seed=-1 の場合、ペイロードに seed が含まれないこと"""
+    snapshot = _make_snapshot(inference={"seed": -1})
+    client = TranslationClient(snapshot)
+    payload = client._build_payload("data")
+    assert "seed" not in payload
+
+
+def test_build_payload_seed_positive():
+    """seed>=0 の場合、ペイロードに seed が含まれること"""
+    snapshot = _make_snapshot(inference={"seed": 42})
+    client = TranslationClient(snapshot)
+    payload = client._build_payload("data")
+    assert payload["seed"] == 42
+
+
+def test_build_payload_empty_stop_sequences():
+    """空のストップシーケンスではペイロードに stop が含まれないこと"""
+    snapshot = _make_snapshot(inference={"stop_sequences": ""})
+    client = TranslationClient(snapshot)
+    payload = client._build_payload("data")
+    assert "stop" not in payload
+
+
+def test_build_payload_target_language_replacement():
+    """{target_language} がシステムプロンプト内で置換されること"""
+    snapshot = _make_snapshot(prompt={
+        "system_prompt": "Translate to {target_language}.",
+        "target_language": "French",
+    })
+    client = TranslationClient(snapshot)
+    payload = client._build_payload("data")
+    system_msg = next(m for m in payload["messages"] if m["role"] == "system")
+    assert "French" in system_msg["content"]
+    assert "{target_language}" not in system_msg["content"]

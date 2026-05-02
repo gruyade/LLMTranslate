@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import sys
 from datetime import datetime
-from PySide6.QtCore import Qt, QRect, QPoint, QSize, Signal
+from PySide6.QtCore import Qt, QRect, QPoint, QSize, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -19,18 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.i18n import tr
-
-
-def _apply_wda_exclude_from_capture(hwnd: int) -> None:
-    """スクリーンキャプチャからウィンドウを除外する（Win32 WDA_EXCLUDEFROMCAPTURE）"""
-    if sys.platform != "win32":
-        return
-    try:
-        import ctypes
-        WDA_EXCLUDEFROMCAPTURE = 0x11
-        ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
-    except Exception:
-        pass
+from ..core.platform import apply_wda_exclude_from_capture
 
 # リサイズハンドルの当たり判定サイズ（px）
 HANDLE_SIZE = 8
@@ -87,10 +75,17 @@ class BubbleWidget(QFrame):
         del_btn.setFixedSize(24, 24)
         del_btn.setToolTip(tr("result.delete"))
         del_btn.setStyleSheet("QPushButton { background: transparent; border: none; font-size: 14px; color: #aaa; } QPushButton:hover { color: #ff5555; }")
-        del_btn.clicked.connect(self.deleteLater)
+        del_btn.clicked.connect(self._remove_self)
         btn_layout.addWidget(del_btn)
         
         layout.addLayout(btn_layout)
+
+    def _remove_self(self) -> None:
+        """親レイアウトから除去してからウィジェットを削除"""
+        parent = self.parentWidget()
+        if parent and parent.layout():
+            parent.layout().removeWidget(self)
+        self.deleteLater()
 
     def _copy_text(self):
         QApplication.clipboard().setText(self._text_label.text())
@@ -120,6 +115,8 @@ class ResultWindow(QWidget):
         self._is_dragging = False
         self._drag_pos = QPoint()
         self._resize_edge = Qt.Edge(0)
+        self._resize_start_pos: QPoint | None = None
+        self._resize_start_size: QSize | None = None
         # ユーザーが意図的に上にスクロールしたかどうかのフラグ
         self._user_scrolled_up = False
         # バックグラウンドモード: データは蓄積するが表示しない
@@ -141,7 +138,7 @@ class ResultWindow(QWidget):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        _apply_wda_exclude_from_capture(int(self.winId()))
+        apply_wda_exclude_from_capture(int(self.winId()))
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
@@ -290,7 +287,6 @@ class ResultWindow(QWidget):
         # _history_layout は末尾に Stretch を持つため count() > 1 で履歴あり
         if self._history_layout.count() > 1:
             self.show()
-            from PySide6.QtCore import QTimer
             def _scroll():
                 bar = self._scroll.verticalScrollBar()
                 bar.setValue(bar.maximum())
@@ -312,7 +308,6 @@ class ResultWindow(QWidget):
         if not self._background_mode and not self.isVisible():
             self.show()
         # タイマーなしだとサイズ反映前にスクロールしてしまうため
-        from PySide6.QtCore import QTimer
         def _maybe_scroll():
             # ユーザーが意図的に上にスクロールしている場合は位置を固定する
             if not self._user_scrolled_up:
@@ -335,16 +330,18 @@ class ResultWindow(QWidget):
                 pos = event.position().toPoint()
                 bw = HANDLE_SIZE + 10
                 if pos.x() > self.width() - bw and pos.y() > self.height() - bw:
-                    self._resize_edge = Qt.BottomEdge | Qt.RightEdge # 便宜上
+                    self._resize_edge = Qt.BottomEdge | Qt.RightEdge  # 便宜上
+                    self._resize_start_pos = event.globalPosition().toPoint()
+                    self._resize_start_size = self.size()
 
     def mouseMoveEvent(self, event):
         if self._is_dragging:
             self.move(event.globalPosition().toPoint() - self._drag_pos)
-        elif self._resize_edge:
-            diff = event.globalPosition().toPoint() - (self.pos() + QPoint(self.width(), self.height()))
-            new_size = self.size() + QSize(diff.x(), diff.y())
-            if new_size.width() >= MIN_WIN_SIZE.width() and new_size.height() >= MIN_WIN_SIZE.height():
-                self.resize(new_size)
+        elif self._resize_edge and self._resize_start_pos is not None and self._resize_start_size is not None:
+            delta = event.globalPosition().toPoint() - self._resize_start_pos
+            new_w = max(MIN_WIN_SIZE.width(), self._resize_start_size.width() + delta.x())
+            new_h = max(MIN_WIN_SIZE.height(), self._resize_start_size.height() + delta.y())
+            self.resize(new_w, new_h)
         else:
             # カーソル変更
             pos = event.position().toPoint()
@@ -359,6 +356,8 @@ class ResultWindow(QWidget):
     def mouseReleaseEvent(self, event):
         self._is_dragging = False
         self._resize_edge = Qt.Edge(0)
+        self._resize_start_pos = None
+        self._resize_start_size = None
 
     # ------------------------------------------------------------------
     # 位置・外観

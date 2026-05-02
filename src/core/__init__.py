@@ -1,3 +1,4 @@
+from .app_service import AppService
 from .async_worker import AsyncTranslationWorker
 from .config import ConfigManager
 from .i18n import tr
@@ -6,6 +7,7 @@ from .monitor import MonitorService
 from .translator import TranslationClient, TranslationError
 
 __all__ = [
+    "AppService",
     "ConfigManager",
     "TranslationClient",
     "TranslationError",

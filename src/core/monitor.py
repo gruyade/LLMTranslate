@@ -50,6 +50,7 @@ class MonitorService(QObject):
         self._translating = False
         self._is_paused = False
         self._detect_font_size = False
+        self._cached_font_size: float | None = None
         self._last_image_b64: str = ""
         self._get_region: Callable[[], tuple[int, int, int, int]] | None = None
         self._hide_widget: QWidget | None = None
@@ -87,9 +88,12 @@ class MonitorService(QObject):
     def set_detect_font_size(self, enabled: bool) -> None:
         self._detect_font_size = enabled
 
+    def invalidate_font_size_cache(self) -> None:
+        """フォントサイズキャッシュを無効化（領域リサイズ時に呼ぶ）"""
+        self._cached_font_size = None
+
     def reload_config(self) -> None:
-        """設定変更後にクライアントを再生成"""
-        self._worker.reload_client()
+        """設定変更後に監視タイマーを再起動"""
         if self._running:
             self._restart_timer()
 
@@ -202,13 +206,28 @@ class MonitorService(QObject):
 
         logger.debug("画像差分を検出。翻訳を実行します")
 
-        # RapidOCR によるテキスト有無チェック + フォントサイズ検出（常時実行）
-        has_text, font_size_pt = ocr_analyze(image_b64)
-        if not has_text:
-            logger.debug("OCR事前チェック: テキストなし。スキップします")
-            return
-        if self._detect_font_size and font_size_pt:
-            self.font_size_detected.emit(font_size_pt)
+        # OCR 事前チェック（設定で無効化可能）
+        ocr_pre_check = self._config.get_monitor_config().get("ocr_pre_check", True)
+        if ocr_pre_check:
+            # フォントサイズ検出: キャッシュ済みなら OCR をテキスト有無チェックのみに使う
+            need_font_detect = self._detect_font_size and self._cached_font_size is None
+            has_text, font_size_pt = ocr_analyze(image_b64)
+            if not has_text:
+                logger.debug("OCR事前チェック: テキストなし。スキップします")
+                return
+            if need_font_detect and font_size_pt:
+                self._cached_font_size = font_size_pt
+                self.font_size_detected.emit(font_size_pt)
+            elif self._detect_font_size and self._cached_font_size is not None:
+                # キャッシュ済みフォントサイズを再送信しない（初回のみ）
+                pass
+        else:
+            # OCR 事前チェック無効: フォントサイズ検出が必要な場合のみ OCR 実行
+            if self._detect_font_size and self._cached_font_size is None:
+                has_text, font_size_pt = ocr_analyze(image_b64)
+                if font_size_pt:
+                    self._cached_font_size = font_size_pt
+                    self.font_size_detected.emit(font_size_pt)
 
         self._last_image_b64 = image_b64
         self._translating = True
