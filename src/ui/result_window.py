@@ -75,10 +75,17 @@ class BubbleWidget(QFrame):
         del_btn.setFixedSize(24, 24)
         del_btn.setToolTip(tr("result.delete"))
         del_btn.setStyleSheet("QPushButton { background: transparent; border: none; font-size: 14px; color: #aaa; } QPushButton:hover { color: #ff5555; }")
-        del_btn.clicked.connect(self.deleteLater)
+        del_btn.clicked.connect(self._remove_self)
         btn_layout.addWidget(del_btn)
         
         layout.addLayout(btn_layout)
+
+    def _remove_self(self) -> None:
+        """親レイアウトから除去してからウィジェットを削除"""
+        parent = self.parentWidget()
+        if parent and parent.layout():
+            parent.layout().removeWidget(self)
+        self.deleteLater()
 
     def _copy_text(self):
         QApplication.clipboard().setText(self._text_label.text())
