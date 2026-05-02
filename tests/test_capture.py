@@ -131,8 +131,8 @@ def test_has_text_content_empty_image():
 def test_has_text_content_error_handling(sample_image_b64: str):
     """OCR エラー時に True を返すこと（LLM 側に判定を任せる）"""
     mock_engine = MagicMock()
-    # _get_rapid_engine()(img) の (img) 呼び出し時に例外を発生させる
-    mock_engine.return_value.side_effect = Exception("OCR engine error")
+    # _get_rapid_engine() が返すエンジンの呼び出し時に例外を発生させる
+    mock_engine.side_effect = Exception("OCR engine error")
     with patch("src.core.capture._get_rapid_engine", return_value=mock_engine):
         result = has_text_content(sample_image_b64)
     assert result is True
