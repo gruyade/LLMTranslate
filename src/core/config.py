@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import sys
 from pathlib import Path
@@ -87,8 +88,8 @@ def _get_config_path() -> Path:
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
-    """baseにoverrideを再帰的にマージ（overrideが優先）"""
-    result = base.copy()
+    """baseにoverrideを再帰的にマージ（overrideが優先、deepcopyで参照共有を防止）"""
+    result = copy.deepcopy(base)
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
             result[key] = _deep_merge(result[key], value)
