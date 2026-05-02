@@ -23,6 +23,7 @@ src/
   app.py                # LLMTranslateApp: コンポーネント統合・シグナル中継
   core/
     config.py            # ConfigManager: JSON設定管理・プリセット
+    app_service.py       # AppService: GUI非依存のビジネスロジック層
     logger.py            # RotatingFileHandler ベースのロギング
     i18n.py              # I18nManager (シングルトン): 多言語対応
     translator.py        # TranslationClient: OpenAI Vision API クライアント
@@ -38,6 +39,7 @@ src/
     icon.ico, icon.png   # アプリアイコン
 tests/
   conftest.py            # 共通フィクスチャ (tmp_config, sample_image_b64 等)
+  test_app_service.py     # AppServiceテスト（翻訳フロー・監視・表示モード）
   test_capture.py        # キャプチャ・OCR・画像差分テスト
   test_config.py         # 設定管理・プリセット操作テスト
   test_i18n.py           # 多言語対応・翻訳キー取得テスト
@@ -58,20 +60,21 @@ run.py → src/main.py (ConfigManager, setup_logging, setup_i18n, QApplication)
 
 ## モジュール依存関係
 ```
-LLMTranslateApp (app.py)
+LLMTranslateApp (app.py) — GUI層
+  ├─ AppService (core/app_service.py) — ビジネスロジック層
+  │   ├─ MonitorService (core/monitor.py)
+  │   │   ├─ AsyncTranslationWorker (core/async_worker.py)
+  │   │   │   └─ TranslationClient (core/translator.py)
+  │   │   ├─ capture_region() (core/capture.py)
+  │   │   ├─ images_differ() (core/capture.py)
+  │   │   └─ ocr_analyze() (core/capture.py)
+  │   └─ ConfigManager (core/config.py)
   ├─ OverlayWindow (ui/overlay_window.py)
   │   └─ InlineResultWidget (同ファイル内)
   ├─ ResultWindow (ui/result_window.py)
   │   └─ BubbleWidget (同ファイル内)
   ├─ SettingsDialog (ui/settings_dialog.py)
   │   └─ ColorButton (同ファイル内)
-  ├─ MonitorService (core/monitor.py)
-  │   ├─ AsyncTranslationWorker (core/async_worker.py)
-  │   │   └─ TranslationClient (core/translator.py)
-  │   ├─ capture_region() (core/capture.py)
-  │   ├─ images_differ() (core/capture.py)
-  │   └─ ocr_analyze() (core/capture.py)
-  ├─ ConfigManager (core/config.py)
   └─ QSystemTrayIcon
 ```
 

@@ -1,27 +1,23 @@
-"""アプリケーションメインクラス - タスクトレイ・コンポーネント間の接続"""
+"""アプリケーションGUI層 - AppServiceとUIコンポーネントの接続"""
 
 from __future__ import annotations
 
 import sys
-import threading
 from pathlib import Path
 
-from PySide6.QtCore import QRect, Qt, QObject, QTimer, Signal, Slot
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon, QPixmap, QColor, QPainter, QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QMenu,
     QSystemTrayIcon,
-    QWidget,
 )
 
-from .core.capture import warmup_ocr_engine
+from .core.app_service import AppService
 from .core.config import ConfigManager
-from .ui.overlay_window import _BTN_PANEL_W, _HANDLE_MARGIN
-from .core.logger import get_logger
-from .core.monitor import MonitorService
 from .core.i18n import tr
-from .ui.overlay_window import OverlayWindow
+from .core.logger import get_logger
+from .ui.overlay_window import OverlayWindow, _BTN_PANEL_W, _HANDLE_MARGIN
 from .ui.result_window import ResultWindow
 from .ui.settings_dialog import SettingsDialog
 
@@ -43,7 +39,6 @@ def _create_tray_icon() -> QIcon:
     if icon_path.exists():
         return QIcon(str(icon_path))
 
-    # フォールバック: プログラムで生成
     pixmap = QPixmap(32, 32)
     pixmap.fill(Qt.transparent)
     painter = QPainter(pixmap)
@@ -63,15 +58,13 @@ def _create_tray_icon() -> QIcon:
 
 class LLMTranslateApp:
     """
-    アプリケーション全体を管理するクラス。
-    QApplicationは呼び出し元で生成済みであること。
+    GUI層: UIコンポーネントの組み立てとAppServiceへのシグナル接続。
+    ビジネスロジックはAppServiceに委譲する。
     """
 
     def __init__(self, config: ConfigManager) -> None:
         self._config = config
         self._settings_dialog: SettingsDialog | None = None
-        self._translating = False
-        self._font_size_signal_connected = False
 
         # オーバーレイ位置保存のデバウンスタイマー
         self._save_overlay_timer = QTimer()
@@ -81,29 +74,33 @@ class LLMTranslateApp:
 
         logger.info("LLMTranslateApp 起動")
 
-        # コンポーネント初期化
+        # サービス層の初期化
+        self._service = AppService(config)
+
+        # UIコンポーネント初期化
         self._init_overlay()
         self._init_result_window()
-        self._init_monitor()
         self._init_tray()
         self._init_shortcuts()
+
+        # サービス層にキャプチャ領域プロバイダーを設定
+        self._service.set_region_provider(self._overlay.get_capture_region)
+
+        # サービス層のシグナルをUIに接続
+        self._connect_service_signals()
+
+        # サービス開始（ワーカースレッド起動・OCRウォームアップ）
+        self._service.start()
 
         # 初期状態の反映
         overlay_cfg = self._config.get_overlay()
         if overlay_cfg.get("visible", True):
             self._overlay.show()
 
-        if self._config.get_auto_monitor():
-            self._monitor.start()
-            self._overlay.set_auto_mode(True)
-        else:
-            self._overlay.set_auto_mode(False)
+        self._overlay.set_auto_mode(self._config.get_auto_monitor())
 
         # 初期表示モードの反映
         self._apply_display_mode()
-
-        # RapidOCR エンジンをバックグラウンドでウォームアップ（初回翻訳の遅延を解消）
-        threading.Thread(target=warmup_ocr_engine, daemon=True).start()
 
     # ------------------------------------------------------------------
     # 初期化
@@ -121,11 +118,11 @@ class LLMTranslateApp:
             border_width=display.get("border_width", 2),
         )
         self._overlay.region_changed.connect(self._on_region_changed)
-        self._overlay.is_operating_changed.connect(self._on_overlay_operating_changed)
-        self._overlay.mode_toggle_requested.connect(self._toggle_monitor)
-        self._overlay.translate_requested.connect(self._trigger_translation)
+        self._overlay.is_operating_changed.connect(self._service.set_monitor_paused)
+        self._overlay.mode_toggle_requested.connect(self._on_toggle_monitor)
+        self._overlay.translate_requested.connect(self._service.trigger_translation)
         self._overlay.settings_requested.connect(self._open_settings)
-        self._overlay.view_mode_toggle_requested.connect(self._toggle_display_mode)
+        self._overlay.view_mode_toggle_requested.connect(self._on_toggle_display_mode)
 
     def _init_result_window(self) -> None:
         display = self._config.get_display()
@@ -135,22 +132,6 @@ class LLMTranslateApp:
             result_width=display.get("result_width", 350),
         )
 
-    def _init_monitor(self) -> None:
-        self._monitor = MonitorService(self._config)
-        self._monitor.set_region_provider(self._overlay.get_capture_region)
-        self._monitor.set_hide_widget(self._overlay)
-        
-        # シグナル接続
-        self._monitor.translation_started.connect(self._on_translation_started)
-        self._monitor.translation_chunk.connect(self._on_translation_chunk)
-        self._monitor.translation_done.connect(self._on_translation_done)
-        self._monitor.translation_error.connect(self._on_translation_error)
-        self._monitor.translation_cancelled.connect(self._on_translation_cancelled)
-        self._monitor.status_changed.connect(self._on_monitor_status_changed)
-        
-        # ワーカースレッド起動
-        self._monitor.start_worker()
-
     def _init_tray(self) -> None:
         self._tray = QSystemTrayIcon(_create_tray_icon())
         self._tray.setToolTip("LLMTranslate")
@@ -159,11 +140,10 @@ class LLMTranslateApp:
         self._tray.show()
 
     def _init_shortcuts(self) -> None:
-        """グローバルショートカット（アプリウィンドウにフォーカスがなくても動作しない点に注意）"""
-        # オーバーレイウィンドウにショートカットを設定
+        """グローバルショートカット"""
         sc_translate = QShortcut(QKeySequence("Ctrl+Shift+T"), self._overlay)
         sc_translate.setContext(Qt.ApplicationShortcut)
-        sc_translate.activated.connect(self._trigger_translation)
+        sc_translate.activated.connect(self._service.trigger_translation)
 
         sc_toggle_overlay = QShortcut(QKeySequence("Ctrl+Shift+H"), self._overlay)
         sc_toggle_overlay.setContext(Qt.ApplicationShortcut)
@@ -171,7 +151,21 @@ class LLMTranslateApp:
 
         sc_toggle_monitor = QShortcut(QKeySequence("Ctrl+Shift+M"), self._overlay)
         sc_toggle_monitor.setContext(Qt.ApplicationShortcut)
-        sc_toggle_monitor.activated.connect(self._toggle_monitor)
+        sc_toggle_monitor.activated.connect(self._on_toggle_monitor)
+
+    def _connect_service_signals(self) -> None:
+        """AppServiceのシグナルをUIコンポーネントに接続"""
+        s = self._service
+
+        s.translation_started.connect(self._on_translation_started)
+        s.translation_chunk.connect(self._on_translation_chunk)
+        s.translation_done.connect(self._on_translation_done)
+        s.translation_error.connect(self._on_translation_error)
+        s.translation_cancelled.connect(self._on_translation_cancelled)
+        s.monitor_status_changed.connect(self._on_monitor_status_changed)
+        s.display_mode_changed.connect(self._apply_display_mode)
+        s.font_size_detected.connect(self._on_font_size_detected)
+        s.settings_changed.connect(self._on_settings_changed)
 
     # ------------------------------------------------------------------
     # トレイメニュー構築
@@ -180,37 +174,32 @@ class LLMTranslateApp:
     def _build_tray_menu(self) -> None:
         menu = QMenu()
 
-        # 翻訳を実行
         self._action_translate = QAction(f"{tr('menu.translate')} (Ctrl+Shift+T)")
-        self._action_translate.triggered.connect(self._trigger_translation)
+        self._action_translate.triggered.connect(self._service.trigger_translation)
         menu.addAction(self._action_translate)
 
         menu.addSeparator()
 
-        # 自動監視モード
         self._action_monitor = QAction(tr("menu.auto_monitor"))
         self._action_monitor.setCheckable(True)
         self._action_monitor.setChecked(self._config.get_auto_monitor())
-        self._action_monitor.triggered.connect(self._toggle_monitor)
+        self._action_monitor.triggered.connect(self._on_toggle_monitor)
         menu.addAction(self._action_monitor)
 
         menu.addSeparator()
 
-        # 枠線の表示/非表示
         self._action_overlay = QAction(f"{tr('menu.show_overlay')} (Ctrl+Shift+H)")
         self._action_overlay.setCheckable(True)
         self._action_overlay.setChecked(self._config.get_overlay().get("visible", True))
         self._action_overlay.triggered.connect(self._toggle_overlay)
         menu.addAction(self._action_overlay)
 
-        # 設定
         self._action_settings = QAction(tr("menu.settings"))
         self._action_settings.triggered.connect(self._open_settings)
         menu.addAction(self._action_settings)
 
         menu.addSeparator()
 
-        # 終了
         self._action_quit = QAction(tr("menu.quit"))
         self._action_quit.triggered.connect(self._quit)
         menu.addAction(self._action_quit)
@@ -218,22 +207,17 @@ class LLMTranslateApp:
         self._tray.setContextMenu(menu)
 
     # ------------------------------------------------------------------
-    # シグナルハンドラ
+    # UI イベントハンドラ（GUI固有の処理）
     # ------------------------------------------------------------------
-
-    def _on_overlay_operating_changed(self, operating: bool) -> None:
-        self._monitor.set_paused(operating)
 
     def _on_region_changed(self, x: int, y: int, w: int, h: int) -> None:
         """オーバーレイ枠が移動・リサイズされたとき"""
-        # 結果ウィンドウの位置を更新
         overlay_rect = self._overlay.geometry()
         self._result.reposition(overlay_rect)
-        # 設定保存はデバウンス（ドラッグ中の連続書き込みを防止）
         self._save_overlay_timer.start()
 
     def _save_overlay_state(self) -> None:
-        """オーバーレイ位置・サイズを設定ファイルに保存（デバウンス後に実行）"""
+        """オーバーレイ位置・サイズを設定ファイルに保存"""
         geo = self._overlay.geometry()
         m = _HANDLE_MARGIN
         self._config.set_overlay(
@@ -243,75 +227,54 @@ class LLMTranslateApp:
             self._overlay.isVisible()
         )
 
-    def _get_display_mode(self) -> str:
-        return self._config.get_display().get("result_display_mode", "bubble_window")
-
     def _on_translation_started(self) -> None:
-        """翻訳開始"""
-        self._translating = True
-        self._action_translate.setEnabled(True) # キャンセル用に有効化
+        self._action_translate.setEnabled(True)
         self._overlay.set_translating(True)
-        
-        # 常に ResultWindow にもデータを送る（バックグラウンドモード時は非表示で蓄積）
         self._result.start_new_translation()
         self._result.reposition(self._overlay.geometry())
 
-        if self._get_display_mode() == "inline_overlay":
+        if self._service.get_display_mode() == "inline_overlay":
             widget = self._overlay.get_inline_widget()
             if widget:
                 widget.start_new_translation()
 
     def _on_translation_chunk(self, chunk: str) -> None:
-        """ストリーミングチャンクを受信"""
-        # 常に ResultWindow にもデータを送る
         self._result.append_chunk(chunk)
 
-        if self._get_display_mode() == "inline_overlay":
+        if self._service.get_display_mode() == "inline_overlay":
             widget = self._overlay.get_inline_widget()
             if widget:
                 widget.append_chunk(chunk)
 
     def _on_translation_done(self, full_text: str) -> None:
-        """翻訳完了"""
-        self._translating = False
         self._action_translate.setEnabled(True)
         self._overlay.set_translating(False)
-        
-        # 常に ResultWindow にもデータを送る
         self._result.finish_translation()
 
-        if self._get_display_mode() == "inline_overlay":
+        if self._service.get_display_mode() == "inline_overlay":
             widget = self._overlay.get_inline_widget()
             if widget:
                 widget.finish_translation()
 
     def _on_translation_error(self, message: str) -> None:
-        """翻訳エラー"""
-        self._translating = False
         self._action_translate.setEnabled(True)
         self._overlay.set_translating(False)
         logger.warning("翻訳エラー: %s", message)
-        
-        # 常に ResultWindow にもデータを送る
         self._result.show_error(message)
 
-        if self._get_display_mode() == "inline_overlay":
+        if self._service.get_display_mode() == "inline_overlay":
             widget = self._overlay.get_inline_widget()
             if widget:
                 widget.show_error(message)
 
     def _on_translation_cancelled(self) -> None:
-        """翻訳キャンセル"""
-        self._translating = False
         self._action_translate.setEnabled(True)
         self._overlay.set_translating(False)
-        # キャンセル時はバブルにその旨を表示
-        msg = f"\n[{tr('result.cancelled') if hasattr(tr, 'result.cancelled') else 'Cancelled'}]"
-        # 常に ResultWindow にもデータを送る
+        msg = f"\n[{tr('result.cancelled')}]"
         self._result.append_chunk(msg)
         self._result.finish_translation()
 
-        if self._get_display_mode() == "inline_overlay":
+        if self._service.get_display_mode() == "inline_overlay":
             widget = self._overlay.get_inline_widget()
             if widget:
                 widget.append_chunk(msg)
@@ -319,26 +282,18 @@ class LLMTranslateApp:
 
     def _on_monitor_status_changed(self, running: bool) -> None:
         self._action_monitor.setChecked(running)
-        self._config.set_auto_monitor(running)
         self._overlay.set_auto_mode(running)
+
+    def _on_toggle_monitor(self) -> None:
+        running = self._service.toggle_monitor()
+        self._action_monitor.setChecked(running)
+
+    def _on_toggle_display_mode(self) -> None:
+        self._service.toggle_display_mode()
 
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason == QSystemTrayIcon.DoubleClick:
             self._toggle_overlay()
-
-    # ------------------------------------------------------------------
-    # アクション
-    # ------------------------------------------------------------------
-
-    def _trigger_translation(self) -> None:
-        """手動翻訳を実行（翻訳中ならキャンセル）"""
-        if self._translating:
-            self._monitor.cancel_translation()
-            return
-        
-        self._translating = True
-        self._action_translate.setEnabled(True) # キャンセル可能にするため
-        self._monitor.translate_once()
 
     def _toggle_overlay(self) -> None:
         if self._overlay.isVisible():
@@ -347,13 +302,8 @@ class LLMTranslateApp:
         else:
             self._overlay.show()
             self._action_overlay.setChecked(True)
-        # 表示切替は即座に保存
         self._save_overlay_timer.stop()
         self._save_overlay_state()
-
-    def _toggle_monitor(self) -> None:
-        running = self._monitor.toggle()
-        self._action_monitor.setChecked(running)
 
     def _open_settings(self) -> None:
         logger.debug("設定画面を表示")
@@ -367,33 +317,27 @@ class LLMTranslateApp:
         self._settings_dialog.show()
 
     def _on_settings_applied(self) -> None:
-        """設定が適用されたときにUIを更新"""
+        """設定ダイアログから適用されたとき"""
+        self._service.apply_settings()
+
+    def _on_settings_changed(self) -> None:
+        """AppServiceから設定変更通知を受けたとき、UIを更新"""
         display = self._config.get_display()
 
-        # オーバーレイ枠線の更新
         self._overlay.set_border_color(display.get("border_color", "#FF0000"))
         self._overlay.set_border_width(display.get("border_width", 2))
 
-        # 表示モードの反映
-        self._apply_display_mode()
-
-        # 結果ウィンドウの更新
         self._result.set_opacity(display.get("result_opacity", 0.9))
         self._result.set_font_size(display.get("font_size", 14))
         self._result.set_result_width(display.get("result_width", 350))
 
-        # 監視サービスの設定再読み込み
-        self._monitor.reload_config()
+        self._apply_display_mode()
 
-        # 自動監視が有効な場合はタイマーを再起動
-        if self._monitor.is_running:
-            self._monitor.stop()
-            self._monitor.start()
-
-    def _apply_display_mode(self) -> None:
-        """現在の設定に基づいて表示モードを適用する"""
+    def _apply_display_mode(self, mode: str | None = None) -> None:
+        """表示モードをUIに反映"""
+        if mode is None:
+            mode = self._service.get_display_mode()
         display = self._config.get_display()
-        mode = display.get("result_display_mode", "bubble_window")
         is_inline = mode == "inline_overlay"
 
         if is_inline:
@@ -402,9 +346,7 @@ class LLMTranslateApp:
                 opacity=display.get("inline_opacity", 0.7),
                 max_height_ratio=display.get("inline_max_height_ratio", 0.4),
             )
-            # インラインモード時は ResultWindow をバックグラウンドモードに（非表示で蓄積）
             self._result.set_background_mode(True)
-            # 過去の最新翻訳を InlineResultWidget に復元して表示
             latest = self._result.get_latest_text()
             if latest:
                 widget = self._overlay.get_inline_widget()
@@ -412,54 +354,24 @@ class LLMTranslateApp:
                     widget.start_new_translation()
                     widget.append_chunk(latest)
                     widget.finish_translation()
-
-            # フォントサイズ検出を有効化
-            self._monitor.set_detect_font_size(True)
-            # 重複接続を防ぐ（フラグで管理）
-            if not self._font_size_signal_connected:
-                self._monitor.font_size_detected.connect(self._on_font_size_detected)
-                self._font_size_signal_connected = True
         else:
             self._overlay.disable_inline_result()
-            self._monitor.set_detect_font_size(False)
-            if self._font_size_signal_connected:
-                self._monitor.font_size_detected.disconnect(self._on_font_size_detected)
-                self._font_size_signal_connected = False
-            # bubble_window モードに戻す: バックグラウンドモード解除 → 履歴があれば即表示
             self._result.set_background_mode(False)
             self._result.show_if_has_history()
 
         self._overlay.set_inline_mode(is_inline)
 
-    def _toggle_display_mode(self) -> None:
-        """オーバーレイボタンから表示モードを切り替える"""
-        display = self._config.get_display()
-        current = display.get("result_display_mode", "bubble_window")
-        new_mode = "bubble_window" if current == "inline_overlay" else "inline_overlay"
-
-        # アクティブプリセットの display.result_display_mode を更新して保存
-        name = self._config.get_active_preset_name()
-        preset = self._config.get_active_preset()
-        preset["display"]["result_display_mode"] = new_mode
-        self._config.save_preset(name, preset)
-
-        self._apply_display_mode()
-
     def _on_font_size_detected(self, pt: float) -> None:
-        """検出されたフォントサイズを適用する"""
         widget = self._overlay.get_inline_widget()
         if widget:
-            # 最小8pt, 最大72ptに制限
             clamped_pt = max(8, min(72, int(pt)))
             widget.set_font_size(clamped_pt)
 
     def _quit(self) -> None:
         """アプリケーションを終了"""
         logger.info("アプリケーション終了")
-        # 終了前に設定を即座に保存
         self._save_overlay_timer.stop()
         self._save_overlay_state()
-        self._monitor.stop()
-        self._monitor.stop_worker()  # ワーカースレッド停止
+        self._service.shutdown()
         self._tray.hide()
         QApplication.quit()

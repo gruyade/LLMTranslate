@@ -134,6 +134,7 @@ TRANSLATIONS = {
 ### テスト対応表
 | ソースファイル | テストファイル |
 |---------------|---------------|
+| `src/core/app_service.py` | `tests/test_app_service.py` |
 | `src/core/config.py` | `tests/test_config.py` |
 | `src/core/logger.py` | `tests/test_logger.py` |
 | `src/core/translator.py` | `tests/test_translator.py` |
