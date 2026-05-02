@@ -545,10 +545,7 @@ class SettingsDialog(QDialog):
 
     def _load_preset(self, name: str) -> None:
         """指定プリセットの値をUIに反映"""
-        presets = self._config._data.get("presets", {})
-        from ..core.config import _deep_merge
-        raw = presets.get(name, {})
-        data = _deep_merge(DEFAULT_PRESET, raw)
+        data = self._config.get_preset(name)
 
         s = data["server"]
         self._api_url.setText(s.get("api_base_url", ""))

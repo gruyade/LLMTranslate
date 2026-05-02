@@ -152,6 +152,12 @@ class ConfigManager:
         preset = presets.get(name, {})
         return _deep_merge(DEFAULT_PRESET, preset)
 
+    def get_preset(self, name: str) -> dict[str, Any]:
+        """指定名のプリセットをデフォルト値とマージして返す"""
+        presets = self._data.get("presets", {})
+        preset = presets.get(name, {})
+        return _deep_merge(DEFAULT_PRESET, preset)
+
     def set_active_preset(self, name: str) -> None:
         if name in self._data.get("presets", {}):
             self._data["active_preset"] = name
