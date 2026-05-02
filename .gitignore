@@ -1,9 +1,13 @@
 ﻿**/__pycache__
+.pytest_cache/
 dist
 build
 
 # ユーザー設定（実行時自動生成）
 config.json
+
+# Kiro — 個人環境設定（APIキー等を含む可能性あり）
+.kiro/settings/
 
 # Roo Code 開発ツール
 .roo/
