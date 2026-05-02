@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from PySide6.QtCore import Qt, QRect, QPoint, QSize, Signal
+from PySide6.QtCore import Qt, QRect, QPoint, QSize, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -278,7 +278,6 @@ class ResultWindow(QWidget):
         # _history_layout は末尾に Stretch を持つため count() > 1 で履歴あり
         if self._history_layout.count() > 1:
             self.show()
-            from PySide6.QtCore import QTimer
             def _scroll():
                 bar = self._scroll.verticalScrollBar()
                 bar.setValue(bar.maximum())
@@ -300,7 +299,6 @@ class ResultWindow(QWidget):
         if not self._background_mode and not self.isVisible():
             self.show()
         # タイマーなしだとサイズ反映前にスクロールしてしまうため
-        from PySide6.QtCore import QTimer
         def _maybe_scroll():
             # ユーザーが意図的に上にスクロールしている場合は位置を固定する
             if not self._user_scrolled_up:
