@@ -70,6 +70,41 @@ jobs:
             **Commit:** ${{ github.sha }}
             **Branch:** ${{ github.ref_name }}
 
+            ### 変更内容
+
+            **feat**
+            - オーバーレイUX改善 — 自動非表示・ホバー拡大・リサイズバグ修正・翻訳キー追加
+            - オーバーレイボタンUIのモダン化・文字位置修正
+
+            **fix**
+            - TranslationClientに設定のdeepcopyを渡す設計に変更
+            - _deep_mergeのコピー方式をdeepcopyに変更
+            - BubbleWidgetの削除時にレイアウトからも除去
+            - ocr_analyzeの推論時間をデバッグログに出力
+            - test_has_text_content_error_handlingのモック階層を修正
+
+            **perf**
+            - OCR処理の軽減 - 画像縮小・フォントサイズキャッシュ・事前チェックオプション化
+            - オーバーレイ位置保存にデバウンスを導入
+
+            **refactor**
+            - AppServiceを導入しGUI層とビジネスロジックを分離
+            - I18nManagerにresetメソッドとdocstringを追加
+            - QTimerのインポートをファイル先頭に移動
+            - _apply_wda_exclude_from_captureを共通モジュールに抽出
+            - ConfigManagerにget_presetメソッドを追加
+
+            **test**
+            - GUIボタン押下相当の統合テストを追加
+            - i18n/translator/config/captureのテストを追加
+
+            **build**
+            - pyproject.tomlに[project]セクションと依存関係を追加
+
+            **docs**
+            - .kiro ステアリング・スペックをGit管理対象に追加
+            - コミットルール・テスト同期ルールをステアリングに追加
+
             ### インストール方法
             1. `LLMTranslate.zip` をダウンロードして展開
             2. `LLMTranslate.exe` を実行
