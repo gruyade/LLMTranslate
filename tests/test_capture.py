@@ -136,3 +136,101 @@ def test_has_text_content_error_handling(sample_image_b64: str):
     with patch("src.core.capture._get_rapid_engine", return_value=mock_engine):
         result = has_text_content(sample_image_b64)
     assert result is True
+
+
+# ------------------------------------------------------------------
+# ocr_analyze（直接テスト）
+# ------------------------------------------------------------------
+
+from src.core.capture import ocr_analyze, detect_text_height_pt
+
+
+def test_ocr_analyze_empty_image():
+    """空の画像文字列で (False, None) を返すこと"""
+    has_text, font_size = ocr_analyze("")
+    assert has_text is False
+    assert font_size is None
+
+
+def test_ocr_analyze_with_text(sample_image_b64: str):
+    """テキスト検出時に (True, float) を返すこと"""
+    mock_engine = MagicMock()
+    # bbox高さ20pxのテキスト行を返す
+    mock_engine.return_value = (
+        [[ [[0, 0], [100, 0], [100, 20], [0, 20]], "Hello", 0.9 ]],
+        {"det": 0.01, "rec": 0.02},
+    )
+    with patch("src.core.capture._get_rapid_engine", return_value=mock_engine):
+        has_text, font_size = ocr_analyze(sample_image_b64)
+    assert has_text is True
+    assert font_size is not None
+    # 20px * 72 / 96 = 15.0pt
+    assert font_size == 15.0
+
+
+def test_ocr_analyze_no_text(sample_image_b64: str):
+    """テキスト未検出時に (False, None) を返すこと"""
+    mock_engine = MagicMock()
+    mock_engine.return_value = (None, None)
+    with patch("src.core.capture._get_rapid_engine", return_value=mock_engine):
+        has_text, font_size = ocr_analyze(sample_image_b64)
+    assert has_text is False
+    assert font_size is None
+
+
+def test_ocr_analyze_error_returns_true(sample_image_b64: str):
+    """OCRエラー時に (True, None) を返すこと"""
+    mock_engine = MagicMock()
+    mock_engine.side_effect = Exception("engine error")
+    with patch("src.core.capture._get_rapid_engine", return_value=mock_engine):
+        has_text, font_size = ocr_analyze(sample_image_b64)
+    assert has_text is True
+    assert font_size is None
+
+
+def test_ocr_analyze_multiple_lines(sample_image_b64: str):
+    """複数行テキストで中央値高さが計算されること"""
+    mock_engine = MagicMock()
+    # 高さ10px, 20px, 30px → 中央値20px → 20*72/96=15.0pt
+    mock_engine.return_value = (
+        [
+            [ [[0, 0], [100, 0], [100, 10], [0, 10]], "Line1", 0.9 ],
+            [ [[0, 20], [100, 20], [100, 40], [0, 40]], "Line2", 0.9 ],
+            [ [[0, 50], [100, 50], [100, 80], [0, 80]], "Line3", 0.9 ],
+        ],
+        None,
+    )
+    with patch("src.core.capture._get_rapid_engine", return_value=mock_engine):
+        has_text, font_size = ocr_analyze(sample_image_b64)
+    assert has_text is True
+    assert font_size == 15.0  # median(10,20,30)=20 → 20*72/96=15.0
+
+
+def test_ocr_analyze_custom_dpi(sample_image_b64: str):
+    """カスタムDPIでフォントサイズが正しく計算されること"""
+    mock_engine = MagicMock()
+    mock_engine.return_value = (
+        [[ [[0, 0], [100, 0], [100, 20], [0, 20]], "Hello", 0.9 ]],
+        None,
+    )
+    with patch("src.core.capture._get_rapid_engine", return_value=mock_engine):
+        # 20px * 72 / 144 = 10.0pt
+        has_text, font_size = ocr_analyze(sample_image_b64, screen_dpi=144.0)
+    assert font_size == 10.0
+
+
+# ------------------------------------------------------------------
+# detect_text_height_pt（後方互換エイリアス）
+# ------------------------------------------------------------------
+
+
+def test_detect_text_height_pt_delegates(sample_image_b64: str):
+    """detect_text_height_ptがocr_analyzeに委譲すること"""
+    mock_engine = MagicMock()
+    mock_engine.return_value = (
+        [[ [[0, 0], [100, 0], [100, 20], [0, 20]], "Hello", 0.9 ]],
+        None,
+    )
+    with patch("src.core.capture._get_rapid_engine", return_value=mock_engine):
+        result = detect_text_height_pt(sample_image_b64)
+    assert result == 15.0

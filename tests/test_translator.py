@@ -216,3 +216,102 @@ async def test_translate_stream_skips_empty_delta(client: TranslationClient, sam
         chunks.append(chunk)
 
     assert chunks == ["text"]
+
+
+# ------------------------------------------------------------------
+# normalize_base_url
+# ------------------------------------------------------------------
+
+from src.core.translator import normalize_base_url
+
+
+def test_normalize_base_url_no_path():
+    """パスなしURLに /v1 が補完されること"""
+    assert normalize_base_url("http://localhost:1234") == "http://localhost:1234/v1"
+
+
+def test_normalize_base_url_root_only():
+    """ルートパスのみのURLに /v1 が補完されること"""
+    assert normalize_base_url("http://localhost:1234/") == "http://localhost:1234/v1"
+
+
+def test_normalize_base_url_with_v1():
+    """既に /v1 がある場合はそのまま返ること"""
+    assert normalize_base_url("http://localhost:1234/v1") == "http://localhost:1234/v1"
+
+
+def test_normalize_base_url_with_v1_trailing_slash():
+    """/v1/ の末尾スラッシュが除去されること"""
+    assert normalize_base_url("http://localhost:1234/v1/") == "http://localhost:1234/v1"
+
+
+def test_normalize_base_url_custom_path():
+    """カスタムパスはそのまま保持されること"""
+    assert normalize_base_url("http://example.com/api/v2") == "http://example.com/api/v2"
+
+
+# ------------------------------------------------------------------
+# ペイロード構築 — エッジケース
+# ------------------------------------------------------------------
+
+
+def test_build_payload_empty_system_prompt():
+    """システムプロンプトが空の場合、systemメッセージが含まれないこと"""
+    snapshot = _make_snapshot(prompt={"system_prompt": "", "target_language": "Japanese"})
+    client = TranslationClient(snapshot)
+    payload = client._build_payload("data")
+    roles = [m["role"] for m in payload["messages"]]
+    assert "system" not in roles
+
+
+def test_build_payload_top_k_zero():
+    """top_k=0 の場合、ペイロードに top_k が含まれないこと"""
+    snapshot = _make_snapshot(inference={"top_k": 0})
+    client = TranslationClient(snapshot)
+    payload = client._build_payload("data")
+    assert "top_k" not in payload
+
+
+def test_build_payload_repeat_penalty_one():
+    """repeat_penalty=1.0 の場合、ペイロードに含まれないこと"""
+    snapshot = _make_snapshot(inference={"repeat_penalty": 1.0})
+    client = TranslationClient(snapshot)
+    payload = client._build_payload("data")
+    assert "repeat_penalty" not in payload
+
+
+def test_build_payload_seed_negative():
+    """seed=-1 の場合、ペイロードに seed が含まれないこと"""
+    snapshot = _make_snapshot(inference={"seed": -1})
+    client = TranslationClient(snapshot)
+    payload = client._build_payload("data")
+    assert "seed" not in payload
+
+
+def test_build_payload_seed_positive():
+    """seed>=0 の場合、ペイロードに seed が含まれること"""
+    snapshot = _make_snapshot(inference={"seed": 42})
+    client = TranslationClient(snapshot)
+    payload = client._build_payload("data")
+    assert payload["seed"] == 42
+
+
+def test_build_payload_empty_stop_sequences():
+    """空のストップシーケンスではペイロードに stop が含まれないこと"""
+    snapshot = _make_snapshot(inference={"stop_sequences": ""})
+    client = TranslationClient(snapshot)
+    payload = client._build_payload("data")
+    assert "stop" not in payload
+
+
+def test_build_payload_target_language_replacement():
+    """{target_language} がシステムプロンプト内で置換されること"""
+    snapshot = _make_snapshot(prompt={
+        "system_prompt": "Translate to {target_language}.",
+        "target_language": "French",
+    })
+    client = TranslationClient(snapshot)
+    payload = client._build_payload("data")
+    system_msg = next(m for m in payload["messages"] if m["role"] == "system")
+    assert "French" in system_msg["content"]
+    assert "{target_language}" not in system_msg["content"]
