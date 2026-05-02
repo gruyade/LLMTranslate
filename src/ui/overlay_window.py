@@ -11,6 +11,7 @@ from PySide6.QtGui import QColor, QPainter, QPen, QCursor, QFont
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QScrollArea, QLabel
 
 from ..core.i18n import tr
+from ..core.platform import apply_wda_exclude_from_capture
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QMouseEvent, QPaintEvent, QResizeEvent
@@ -65,19 +66,6 @@ def _apply_dwm_no_border(hwnd: int) -> None:
         pass  # DWM API が使えない環境では無視
 
 
-def _apply_wda_exclude_from_capture(hwnd: int) -> None:
-    """スクリーンキャプチャからウィンドウを除外する（Win32 WDA_EXCLUDEFROMCAPTURE）"""
-    if sys.platform != "win32":
-        return
-    try:
-        import ctypes
-        # WDA_EXCLUDEFROMCAPTURE = 0x11（Windows 10 build 19041以降）
-        WDA_EXCLUDEFROMCAPTURE = 0x11
-        ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
-    except Exception:
-        pass
-
-
 _LABEL_STYLE_NORMAL = "color: white; padding: 4px; background: transparent;"
 _LABEL_STYLE_ERROR = "color: #ff8888; padding: 4px; background: transparent;"
 
@@ -111,7 +99,7 @@ class InlineResultWidget(QWidget):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         # キャプチャから除外（映り込み・ちらつき防止）
-        _apply_wda_exclude_from_capture(int(self.winId()))
+        apply_wda_exclude_from_capture(int(self.winId()))
 
     def _build_ui(self) -> None:
         self.setObjectName("inline_result")

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from datetime import datetime
 from PySide6.QtCore import Qt, QRect, QPoint, QSize, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QCursor
@@ -19,18 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.i18n import tr
-
-
-def _apply_wda_exclude_from_capture(hwnd: int) -> None:
-    """スクリーンキャプチャからウィンドウを除外する（Win32 WDA_EXCLUDEFROMCAPTURE）"""
-    if sys.platform != "win32":
-        return
-    try:
-        import ctypes
-        WDA_EXCLUDEFROMCAPTURE = 0x11
-        ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
-    except Exception:
-        pass
+from ..core.platform import apply_wda_exclude_from_capture
 
 # リサイズハンドルの当たり判定サイズ（px）
 HANDLE_SIZE = 8
@@ -141,7 +129,7 @@ class ResultWindow(QWidget):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        _apply_wda_exclude_from_capture(int(self.winId()))
+        apply_wda_exclude_from_capture(int(self.winId()))
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
