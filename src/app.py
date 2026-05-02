@@ -6,7 +6,7 @@ import sys
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QRect, Qt, QObject, Signal, Slot
+from PySide6.QtCore import QRect, Qt, QObject, QTimer, Signal, Slot
 from PySide6.QtGui import QIcon, QPixmap, QColor, QPainter, QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -72,6 +72,12 @@ class LLMTranslateApp:
         self._settings_dialog: SettingsDialog | None = None
         self._translating = False
         self._font_size_signal_connected = False
+
+        # オーバーレイ位置保存のデバウンスタイマー
+        self._save_overlay_timer = QTimer()
+        self._save_overlay_timer.setSingleShot(True)
+        self._save_overlay_timer.setInterval(500)
+        self._save_overlay_timer.timeout.connect(self._save_overlay_state)
 
         logger.info("LLMTranslateApp 起動")
 
@@ -223,7 +229,11 @@ class LLMTranslateApp:
         # 結果ウィンドウの位置を更新
         overlay_rect = self._overlay.geometry()
         self._result.reposition(overlay_rect)
-        # 設定に保存（ボタンパネル幅・マージンを除いたフレーム幅を保存）
+        # 設定保存はデバウンス（ドラッグ中の連続書き込みを防止）
+        self._save_overlay_timer.start()
+
+    def _save_overlay_state(self) -> None:
+        """オーバーレイ位置・サイズを設定ファイルに保存（デバウンス後に実行）"""
         geo = self._overlay.geometry()
         m = _HANDLE_MARGIN
         self._config.set_overlay(
@@ -337,14 +347,9 @@ class LLMTranslateApp:
         else:
             self._overlay.show()
             self._action_overlay.setChecked(True)
-        geo = self._overlay.geometry()
-        m = _HANDLE_MARGIN
-        self._config.set_overlay(
-            geo.x() + m, geo.y() + m,
-            geo.width() - _BTN_PANEL_W - m * 2,
-            geo.height() - m * 2,
-            self._overlay.isVisible()
-        )
+        # 表示切替は即座に保存
+        self._save_overlay_timer.stop()
+        self._save_overlay_state()
 
     def _toggle_monitor(self) -> None:
         running = self._monitor.toggle()
@@ -451,15 +456,9 @@ class LLMTranslateApp:
     def _quit(self) -> None:
         """アプリケーションを終了"""
         logger.info("アプリケーション終了")
-        # 終了前に設定を保存（ボタンパネル幅・マージンを除いたフレーム幅を保存）
-        geo = self._overlay.geometry()
-        m = _HANDLE_MARGIN
-        self._config.set_overlay(
-            geo.x() + m, geo.y() + m,
-            geo.width() - _BTN_PANEL_W - m * 2,
-            geo.height() - m * 2,
-            self._overlay.isVisible()
-        )
+        # 終了前に設定を即座に保存
+        self._save_overlay_timer.stop()
+        self._save_overlay_state()
         self._monitor.stop()
         self._monitor.stop_worker()  # ワーカースレッド停止
         self._tray.hide()
