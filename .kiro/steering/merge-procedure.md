@@ -79,7 +79,15 @@ cat .github/workflows/release.yml
 - release.yml の Python バージョンが test.yml のマトリクスに含まれているか
 - `build.spec` の `hiddenimports` に新規追加した翻訳モジュール等が含まれているか
 
-### 2. ローカルテスト通過を確認
+### 2. 仕様の書き出しとコード整理
+
+> 詳細な手順はグローバルステアリング `development-rules.md` の「マージ前の準備」を参照。
+
+このプロジェクト固有の追加チェック:
+- `build.spec` の `hiddenimports` に新規モジュールが含まれているか
+- `src/core/translations/` に追加した言語が `SUPPORTED_LANGUAGES` に登録されているか
+
+### 3. ローカルテスト通過を確認
 
 ```bash
 pytest -v
@@ -87,7 +95,7 @@ pytest -v
 
 全テスト通過を確認してから次へ進む。
 
-### 3. 変更ログの収集
+### 4. 変更ログの収集
 
 前回の main マージ以降のコミットログを取得する。
 
@@ -99,7 +107,7 @@ git log main..HEAD --oneline --no-merges
 git diff main --stat | Select-Object -Last 1
 ```
 
-### 4. release.yml の body を書き換え
+### 5. release.yml の body を書き換え
 
 `.github/workflows/release.yml` の `body` セクションを、収集した変更ログで更新する。
 
@@ -134,14 +142,14 @@ body のフォーマット:
 - 破壊的変更がある場合は `⚠ BREAKING:` プレフィックスを付与
 - 「インストール方法」セクションは常に末尾に残す
 
-### 5. body 書き換えをコミット
+### 6. body 書き換えをコミット
 
 ```bash
 git add .github/workflows/release.yml
 git commit -m "docs: リリースノート更新"
 ```
 
-### 6. main にマージ
+### 7. main にマージ
 
 ```bash
 git checkout main

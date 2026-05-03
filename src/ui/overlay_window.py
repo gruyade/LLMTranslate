@@ -34,14 +34,14 @@ _BTN_SIZE = 20
 # グラブハンドルの幅・高さ
 _GRAB_W = 36
 _GRAB_H = 5
-# ハンドルをフレーム外側に表示するためのマージン（px）
+# ウィンドウ端のクリック余白（px）
 _HANDLE_MARGIN = 5
 # ホバー拡大時のサイズ
 _GRAB_W_EXPANDED = 60
 _GRAB_H_EXPANDED = 10
 _RESIZE_SIZE_EXPANDED = 10
 # ホバー検出距離（px）
-_HOVER_DISTANCE = 15
+_HOVER_DISTANCE = 30
 
 
 def _apply_dwm_no_border(hwnd: int) -> None:
@@ -243,23 +243,21 @@ class _FadeState:
 class AutoHideController:
     """UI要素の自動非表示を制御するコントローラ
 
-    マウス位置に基づいてボタンパネル・グラブハンドル・リサイズハンドルの
-    不透明度を管理し、フェードアニメーションで滑らかに表示/非表示を切り替える。
+    マウス位置に基づいて全UI要素（ボタンパネル・グラブハンドル・リサイズハンドル）の
+    不透明度を一括管理し、フェードアニメーションで滑らかに表示/非表示を切り替える。
     """
 
     # タイミング定数
     FADE_DURATION_MS: int = 150
-    FADE_OUT_DELAY_MS: int = 300
+    FADE_OUT_DELAY_MS: int = 800
     INITIAL_SHOW_MS: int = 1000
     TICK_INTERVAL_MS: int = 16
 
     def __init__(self, overlay: "OverlayWindow") -> None:
         self._overlay = overlay
 
-        # フェード状態（ボタンパネル、グラブハンドル、リサイズハンドル×4）
-        self._btn_fade = _FadeState()
-        self._grab_fade = _FadeState()
-        self._resize_fades: list[_FadeState] = [_FadeState() for _ in range(4)]
+        # 全UI要素の統一フェード状態
+        self._fade = _FadeState()
 
         # 内部フラグ
         self._is_operating: bool = False
@@ -271,7 +269,7 @@ class AutoHideController:
         self._fade_timer.setInterval(self.TICK_INTERVAL_MS)
         self._fade_timer.timeout.connect(self._on_fade_tick)
 
-        # マウス離脱後のフェードアウト遅延タイマー（300ms singleShot）
+        # マウス離脱後のフェードアウト遅延タイマー
         self._fade_out_delay_timer = QTimer()
         self._fade_out_delay_timer.setSingleShot(True)
         self._fade_out_delay_timer.setInterval(self.FADE_OUT_DELAY_MS)
@@ -288,23 +286,21 @@ class AutoHideController:
     # ------------------------------------------------------------------
 
     @property
+    def opacity(self) -> float:
+        """全UI要素の現在の不透明度 (0.0〜1.0)"""
+        return self._fade.current_opacity
+
+    # 後方互換プロパティ（描画コードから参照）
+    @property
     def btn_opacity(self) -> float:
-        """ボタンパネルの現在の不透明度 (0.0〜1.0)"""
-        return self._btn_fade.current_opacity
+        return self._fade.current_opacity
 
     @property
     def grab_handle_opacity(self) -> float:
-        """グラブハンドルの現在の不透明度 (0.0〜1.0)"""
-        return self._grab_fade.current_opacity
+        return self._fade.current_opacity
 
     def resize_handle_opacity(self, corner_index: int) -> float:
-        """指定コーナーのリサイズハンドル不透明度 (0.0〜1.0)
-
-        corner_index: 0=TL, 1=TR, 2=BL, 3=BR
-        """
-        if 0 <= corner_index < 4:
-            return self._resize_fades[corner_index].current_opacity
-        return 0.0
+        return self._fade.current_opacity
 
     # ------------------------------------------------------------------
     # Hover Zone 判定
@@ -314,6 +310,7 @@ class AutoHideController:
         """マウス位置を受け取り、Hover Zone 判定を行う
 
         操作中・初期表示中は全要素を表示状態に維持する。
+        フレーム枠線・ボタンパネル付近にマウスがあれば全UI要素を表示する。
         """
         if self._is_operating or self._is_initial_show:
             return
@@ -325,42 +322,30 @@ class AutoHideController:
         frame_h = h - m * 2
         mx, my = local_pos.x(), local_pos.y()
 
-        # --- ボタンパネル Hover Zone ---
-        # フレーム右辺 (m + frame_w) から右方向に _BTN_PANEL_W + 10px
-        btn_zone_left = m + frame_w
-        btn_zone_right = m + frame_w + _BTN_PANEL_W + 10
-        btn_zone_top = m
-        btn_zone_bottom = m + frame_h
-        in_btn_zone = (
-            btn_zone_left <= mx <= btn_zone_right
-            and btn_zone_top <= my <= btn_zone_bottom
+        # フレーム枠線からの距離で判定（内側・外側両方）
+        band = _HOVER_DISTANCE
+
+        # フレーム矩形を band だけ膨らませた領域（ボタンパネル含む）
+        in_expanded = (
+            m - band <= mx <= m + frame_w + _BTN_PANEL_W + band
+            and m - band <= my <= m + frame_h + band
         )
-        self._btn_fade.target_opacity = 1.0 if in_btn_zone else 0.0
 
-        # --- グラブハンドル Hover Zone ---
-        # フレーム上辺 (m) から上方向に _GRAB_H + 15px
-        grab_zone_top = m - (_GRAB_H + 15)
-        grab_zone_bottom = m
-        grab_zone_left = m
-        grab_zone_right = m + frame_w
-        in_grab_zone = (
-            grab_zone_left <= mx <= grab_zone_right
-            and grab_zone_top <= my <= grab_zone_bottom
+        # フレーム矩形を band だけ縮めた領域（完全に内側の深い部分）
+        in_inner = (
+            m + band <= mx <= m + frame_w - band
+            and m + band <= my <= m + frame_h - band
         )
-        self._grab_fade.target_opacity = 1.0 if in_grab_zone else 0.0
 
-        # --- リサイズハンドル Hover Zone ---
-        # 各コーナーから 15px 半径
-        corner_centers = [
-            (m, m),                     # TL
-            (m + frame_w, m),           # TR
-            (m, m + frame_h),           # BL
-            (m + frame_w, m + frame_h), # BR
-        ]
-        for i, (cx, cy) in enumerate(corner_centers):
-            dist = math.hypot(mx - cx, my - cy)
-            self._resize_fades[i].target_opacity = 1.0 if dist <= 15.0 else 0.0
+        # 枠線付近 = 膨張領域内 かつ 内側深部でない
+        # または ボタンパネル領域内
+        in_border_band = in_expanded and not in_inner
+        in_btn_panel = (
+            m + frame_w - 10 <= mx <= m + frame_w + _BTN_PANEL_W + 10
+            and m - 10 <= my <= m + frame_h + 10
+        )
 
+        self._fade.target_opacity = 1.0 if (in_border_band or in_btn_panel) else 0.0
         self._ensure_fade_timer()
 
     # ------------------------------------------------------------------
@@ -368,52 +353,35 @@ class AutoHideController:
     # ------------------------------------------------------------------
 
     def _on_fade_tick(self) -> None:
-        """各フェード状態を目標値に向けて補間する"""
-        # 1ティックあたりの不透明度変化量
+        """フェード状態を目標値に向けて補間する"""
         step = self.TICK_INTERVAL_MS / self.FADE_DURATION_MS
+        state = self._fade
 
-        changed = False
-        all_done = True
-
-        for state in self._all_fade_states():
-            if abs(state.current_opacity - state.target_opacity) < 0.001:
-                if state.current_opacity != state.target_opacity:
-                    state.current_opacity = state.target_opacity
-                    changed = True
-                continue
-
-            all_done = False
-            if state.target_opacity > state.current_opacity:
-                state.current_opacity = min(
-                    state.target_opacity,
-                    state.current_opacity + step,
-                )
-            else:
-                state.current_opacity = max(
-                    state.target_opacity,
-                    state.current_opacity - step,
-                )
-            # クランプ
-            state.current_opacity = max(0.0, min(1.0, state.current_opacity))
-            changed = True
-
-        if changed:
-            self._overlay.update()
-
-        if all_done:
+        if abs(state.current_opacity - state.target_opacity) < 0.001:
+            if state.current_opacity != state.target_opacity:
+                state.current_opacity = state.target_opacity
+                self._overlay.update()
             self._fade_timer.stop()
+            return
 
-    def _all_fade_states(self) -> list[_FadeState]:
-        """全フェード状態のリストを返す"""
-        return [self._btn_fade, self._grab_fade, *self._resize_fades]
+        if state.target_opacity > state.current_opacity:
+            state.current_opacity = min(
+                state.target_opacity,
+                state.current_opacity + step,
+            )
+        else:
+            state.current_opacity = max(
+                state.target_opacity,
+                state.current_opacity - step,
+            )
+        state.current_opacity = max(0.0, min(1.0, state.current_opacity))
+        self._overlay.update()
 
     def _ensure_fade_timer(self) -> None:
         """目標と現在値に差がある場合にタイマーを開始する"""
-        for state in self._all_fade_states():
-            if abs(state.current_opacity - state.target_opacity) > 0.001:
-                if not self._fade_timer.isActive():
-                    self._fade_timer.start()
-                return
+        if abs(self._fade.current_opacity - self._fade.target_opacity) > 0.001:
+            if not self._fade_timer.isActive():
+                self._fade_timer.start()
 
     # ------------------------------------------------------------------
     # マウス入退出
@@ -433,11 +401,10 @@ class AutoHideController:
         self._fade_out_delay_timer.start()
 
     def _on_fade_out_delay(self) -> None:
-        """フェードアウト遅延タイマー発火 — 全要素を非表示ターゲットに設定"""
+        """フェードアウト遅延タイマー発火 — 非表示ターゲットに設定"""
         if self._is_operating or self._is_initial_show or self._mouse_inside:
             return
-        for state in self._all_fade_states():
-            state.target_opacity = 0.0
+        self._fade.target_opacity = 0.0
         self._ensure_fade_timer()
 
     # ------------------------------------------------------------------
@@ -446,9 +413,8 @@ class AutoHideController:
 
     def force_visible(self) -> None:
         """全要素を即座に不透明度 1.0 に設定する"""
-        for state in self._all_fade_states():
-            state.current_opacity = 1.0
-            state.target_opacity = 1.0
+        self._fade.current_opacity = 1.0
+        self._fade.target_opacity = 1.0
         self._fade_timer.stop()
         self._overlay.update()
 
@@ -517,7 +483,8 @@ class HoverExpander:
     RESIZE_DEFAULT: int = HANDLE_SIZE
     RESIZE_EXPANDED: int = _RESIZE_SIZE_EXPANDED
 
-    def __init__(self) -> None:
+    def __init__(self, overlay: "OverlayWindow") -> None:
+        self._overlay = overlay
         # グラブハンドルの拡大率
         self._grab_scale = _ScaleState()
         # リサイズハンドル×4 の拡大率
@@ -573,11 +540,13 @@ class HoverExpander:
         """各スケール状態を目標値に向けて補間する"""
         step = self.TICK_INTERVAL_MS / self.EXPAND_DURATION_MS
 
+        changed = False
         all_done = True
         for state in self._all_scale_states():
             if abs(state.current - state.target) < 0.001:
                 if state.current != state.target:
                     state.current = state.target
+                    changed = True
                 continue
 
             all_done = False
@@ -587,6 +556,10 @@ class HoverExpander:
                 state.current = max(state.target, state.current - step)
             # クランプ
             state.current = max(0.0, min(1.0, state.current))
+            changed = True
+
+        if changed:
+            self._overlay.update()
 
         if all_done:
             self._anim_timer.stop()
@@ -643,7 +616,8 @@ class OverlayWindow(QWidget):
     """
     完全透過ウィンドウに枠線のみ描画するオーバーレイ。
     ボタンはフレーム右外側に縦並び配置。
-    グラブハンドルはフレーム枠線の外側（_HANDLE_MARGIN 領域）に表示。
+    グラブハンドル・リサイズハンドルはフレーム内側に表示。
+    WDA_EXCLUDEFROMCAPTURE でキャプチャから除外済み。
     """
 
     region_changed = Signal(int, int, int, int)
@@ -699,12 +673,14 @@ class OverlayWindow(QWidget):
 
         # 自動非表示・ホバー拡大コントローラ
         self._auto_hide = AutoHideController(self)
-        self._hover_expander = HoverExpander()
+        self._hover_expander = HoverExpander(self)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
         # ウィンドウが表示された後に DWM 枠線を除去
         _apply_dwm_no_border(int(self.winId()))
+        # キャプチャから除外（ハンドル等がキャプチャに映り込むのを防止）
+        apply_wda_exclude_from_capture(int(self.winId()))
         # 初期表示時に1秒間UI要素を表示維持
         self._auto_hide.on_show_or_reposition()
 
@@ -831,7 +807,7 @@ class OverlayWindow(QWidget):
             int(m + frame_w - half), int(m + frame_h - half),
         )
 
-        # グラブハンドル（上辺中央、フレーム枠線の外側）- 角丸ピル型
+        # グラブハンドル（上辺中央、フレーム内側）- 角丸ピル型
         grab_opacity = self._auto_hide.grab_handle_opacity
         if grab_opacity > 0.01:
             gw = self._hover_expander.grab_width
@@ -841,7 +817,8 @@ class OverlayWindow(QWidget):
             painter.setBrush(handle_color)
             painter.setPen(Qt.NoPen)
             gh_x = m + (frame_w - gw) / 2.0
-            painter.drawRoundedRect(QRectF(gh_x, m - gh, gw, gh), 2, 2)
+            gh_y = m + self._border_width + 2  # フレーム内側に配置
+            painter.drawRoundedRect(QRectF(gh_x, gh_y, gw, gh), 2, 2)
 
         # ボタンパネル（フレーム右外側に縦並び、上寄せ）
         btn_opacity = self._auto_hide.btn_opacity
@@ -910,13 +887,22 @@ class OverlayWindow(QWidget):
             painter.setOpacity(1.0)
 
         # リサイズハンドル（四隅）- 角丸ドット（不透明度 + 動的サイズ適用）
+        # 各コーナーからフレーム内側方向にオフセットして描画
         corner_positions = [
             (m, m),                     # TL: 左上
             (m + frame_w, m),           # TR: 右上
             (m, m + frame_h),           # BL: 左下
             (m + frame_w, m + frame_h), # BR: 右下
         ]
-        for i, (cx, cy) in enumerate(corner_positions):
+        # (dx, dy): コーナー基点からの描画オフセット方向
+        # TL→右下方向, TR→左下方向, BL→右上方向, BR→左上方向
+        corner_offsets = [
+            (0, 0),       # TL: cx, cy を左上として右下に描画
+            (-1, 0),      # TR: cx-hs, cy を左上として左下に描画
+            (0, -1),      # BL: cx, cy-hs を左上として右上に描画
+            (-1, -1),     # BR: cx-hs, cy-hs を左上として左上に描画
+        ]
+        for i, ((cx, cy), (ox, oy)) in enumerate(zip(corner_positions, corner_offsets)):
             r_opacity = self._auto_hide.resize_handle_opacity(i)
             if r_opacity < 0.01:
                 continue
@@ -925,7 +911,9 @@ class OverlayWindow(QWidget):
             handle_color2.setAlpha(int(180 * r_opacity))
             painter.setBrush(handle_color2)
             painter.setPen(Qt.NoPen)
-            painter.drawRoundedRect(QRectF(cx - hs, cy - hs, hs, hs), 1, 1)
+            rx = cx + ox * hs
+            ry = cy + oy * hs
+            painter.drawRoundedRect(QRectF(rx, ry, hs, hs), 1, 1)
 
     # ------------------------------------------------------------------
     # マウスイベント
@@ -953,15 +941,16 @@ class OverlayWindow(QWidget):
         frame_h = h - m * 2
         bw = max(self._border_width + 4, HANDLE_SIZE)
 
-        # グラブハンドル判定（フレーム上辺の外側マージン領域）- 最優先
+        # グラブハンドル判定（フレーム内側）- 最優先
         # ホバー拡大時の動的サイズを使用
         gw = self._hover_expander.grab_width
         gh = self._hover_expander.grab_height
         gh_x = m + (frame_w - gw) / 2.0
-        if y < m and y >= m - gh - 4 and gh_x <= x <= gh_x + gw:
+        gh_y = m + self._border_width + 2  # 描画位置と一致
+        if gh_y <= y <= gh_y + gh + 4 and gh_x <= x <= gh_x + gw:
             return ResizeEdge.MOVE_HANDLE
 
-        # 四隅ハンドル判定（フレーム外側マージン領域）- ボタン判定より優先
+        # 四隅ハンドル判定（フレーム内側）- ボタン判定より優先
         # ホバー拡大時の動的サイズを使用
         corner_positions = [
             (m, m),                     # TL
@@ -975,9 +964,20 @@ class OverlayWindow(QWidget):
             ResizeEdge.BOTTOM_LEFT,
             ResizeEdge.BOTTOM_RIGHT,
         ]
-        for i, ((cx, cy), edge) in enumerate(zip(corner_positions, corner_edges)):
+        # 描画と同じオフセット方向でヒットテスト
+        corner_offsets = [
+            (0, 0),       # TL: 右下方向
+            (-1, 0),      # TR: 左下方向
+            (0, -1),      # BL: 右上方向
+            (-1, -1),     # BR: 左上方向
+        ]
+        for i, ((cx, cy), edge, (ox, oy)) in enumerate(
+            zip(corner_positions, corner_edges, corner_offsets)
+        ):
             hs = self._hover_expander.resize_handle_size(i)
-            if cx - hs <= x < cx + hs and cy - hs <= y < cy + hs:
+            rx = cx + ox * hs
+            ry = cy + oy * hs
+            if rx <= x < rx + hs and ry <= y < ry + hs:
                 return edge
 
         # ボタン判定
