@@ -16,7 +16,6 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QScrollArea, QLabel
 
 from ..core.i18n import tr
-from ..core.platform import apply_wda_exclude_from_capture
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QMouseEvent, QPaintEvent, QResizeEvent
@@ -111,8 +110,6 @@ class InlineResultWidget(QWidget):
         super().showEvent(event)
         # DWM 角丸を無効化（Windows 11 のウィンドウ角丸を除去）
         _apply_dwm_no_border(int(self.winId()))
-        # キャプチャから除外（映り込み・ちらつき防止）
-        apply_wda_exclude_from_capture(int(self.winId()))
 
     def _build_ui(self) -> None:
         self.setObjectName("inline_result")
@@ -679,8 +676,6 @@ class OverlayWindow(QWidget):
         super().showEvent(event)
         # ウィンドウが表示された後に DWM 枠線を除去
         _apply_dwm_no_border(int(self.winId()))
-        # キャプチャから除外（ハンドル等がキャプチャに映り込むのを防止）
-        apply_wda_exclude_from_capture(int(self.winId()))
         # 初期表示時に1秒間UI要素を表示維持
         self._auto_hide.on_show_or_reposition()
 

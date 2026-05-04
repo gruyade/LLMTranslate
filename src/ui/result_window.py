@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.i18n import tr
-from ..core.platform import apply_wda_exclude_from_capture
 
 # リサイズハンドルの当たり判定サイズ（px）
 HANDLE_SIZE = 8
@@ -138,7 +137,6 @@ class ResultWindow(QWidget):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        apply_wda_exclude_from_capture(int(self.winId()))
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
