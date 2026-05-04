@@ -17,6 +17,7 @@ from .core.app_service import AppService
 from .core.config import ConfigManager
 from .core.i18n import tr
 from .core.logger import get_logger
+from .core.platform import CaptureExclusionManager
 from .ui.overlay_window import OverlayWindow, _BTN_PANEL_W, _HANDLE_MARGIN
 from .ui.result_window import ResultWindow
 from .ui.settings_dialog import SettingsDialog
@@ -80,6 +81,7 @@ class LLMTranslateApp:
         # UIコンポーネント初期化
         self._init_overlay()
         self._init_result_window()
+        self._init_capture_exclusion()
         self._init_tray()
         self._init_shortcuts()
 
@@ -131,6 +133,16 @@ class LLMTranslateApp:
             font_size=display.get("font_size", 14),
             result_width=display.get("result_width", 350),
         )
+
+    def _init_capture_exclusion(self) -> None:
+        """キャプチャ除外マネージャの初期化とコールバック接続"""
+        self._exclusion_mgr = CaptureExclusionManager()
+        # OverlayWindow / ResultWindow の HWND を登録
+        self._exclusion_mgr.register(int(self._overlay.winId()))
+        self._exclusion_mgr.register(int(self._result.winId()))
+        # MonitorService のコールバックに接続
+        self._service.monitor.set_pre_capture_callback(self._exclusion_mgr.exclude_all)
+        self._service.monitor.set_post_capture_callback(self._exclusion_mgr.restore_all)
 
     def _init_tray(self) -> None:
         self._tray = QSystemTrayIcon(_create_tray_icon())
@@ -348,6 +360,10 @@ class LLMTranslateApp:
                 opacity=display.get("inline_opacity", 0.7),
                 max_height_ratio=display.get("inline_max_height_ratio", 0.4),
             )
+            # InlineResultWidget の HWND をキャプチャ除外マネージャに登録
+            widget = self._overlay.get_inline_widget()
+            if widget:
+                self._exclusion_mgr.register(int(widget.winId()))
             self._result.set_background_mode(True)
             latest = self._result.get_latest_text()
             if latest:

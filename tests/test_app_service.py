@@ -224,3 +224,198 @@ def test_set_region_provider(service: AppService):
     with patch.object(service.monitor, "set_region_provider") as mock_set:
         service.set_region_provider(provider)
         mock_set.assert_called_once_with(provider)
+
+
+# ------------------------------------------------------------------
+# 統合テスト: MonitorService + CaptureExclusionManager
+# ------------------------------------------------------------------
+
+
+class TestMonitorCaptureExclusionIntegration:
+    """MonitorService と CaptureExclusionManager の統合テスト
+
+    キャプチャ前後で exclude_all / restore_all が正しく呼ばれることを検証。
+    """
+
+    @pytest.fixture
+    def monitor(self, config: ConfigManager):
+        """テスト用 MonitorService（ワーカースレッドは起動しない）"""
+        from src.core.monitor import MonitorService
+
+        svc = MonitorService(config)
+        # region provider を設定（有効な領域を返す）
+        svc.set_region_provider(lambda: (0, 0, 100, 100))
+        return svc
+
+    @pytest.fixture
+    def exclusion_mgr(self):
+        """テスト用 CaptureExclusionManager（HWND を登録済み）"""
+        from src.core.platform import CaptureExclusionManager
+
+        mgr = CaptureExclusionManager()
+        mgr.register(1001)
+        mgr.register(1002)
+        mgr.register(1003)
+        return mgr
+
+    def _setup_worker_mock(self, monitor) -> None:
+        """_worker を MagicMock に差し替え（is_busy property のモック回避）"""
+        mock_worker = MagicMock()
+        mock_worker.is_busy = False
+        monitor._worker = mock_worker
+
+    def test_pre_capture_calls_exclude_all(
+        self, monitor, exclusion_mgr
+    ) -> None:
+        """pre_capture_cb で exclude_all が呼ばれ、全 HWND に WDA_EXCLUDEFROMCAPTURE が設定される
+
+        **Validates: Requirements 6.1, 7.1**
+        """
+        from src.core.platform import _WDA_EXCLUDEFROMCAPTURE
+
+        # コールバック接続
+        monitor.set_pre_capture_callback(exclusion_mgr.exclude_all)
+        monitor.set_post_capture_callback(exclusion_mgr.restore_all)
+        self._setup_worker_mock(monitor)
+
+        wda_calls: list[tuple[int, int]] = []
+
+        def track_wda(hwnd: int, affinity: int) -> None:
+            wda_calls.append((hwnd, affinity))
+
+        with patch("src.core.platform._set_window_display_affinity", side_effect=track_wda), \
+             patch("src.core.monitor.capture_region", return_value="fake_b64"), \
+             patch("src.core.monitor.images_differ", return_value=True), \
+             patch("src.core.monitor.ocr_analyze", return_value=(True, None)):
+            monitor.translate_once()
+
+        # exclude_all で全 HWND に WDA_EXCLUDEFROMCAPTURE が呼ばれたことを検証
+        exclude_calls = {
+            (h, a) for h, a in wda_calls if a == _WDA_EXCLUDEFROMCAPTURE
+        }
+        expected = {
+            (1001, _WDA_EXCLUDEFROMCAPTURE),
+            (1002, _WDA_EXCLUDEFROMCAPTURE),
+            (1003, _WDA_EXCLUDEFROMCAPTURE),
+        }
+        assert exclude_calls == expected
+
+    def test_post_capture_calls_restore_all(
+        self, monitor, exclusion_mgr
+    ) -> None:
+        """post_capture_cb で restore_all が呼ばれ、全 HWND に WDA_NONE が設定される
+
+        **Validates: Requirements 6.2, 7.2**
+        """
+        from src.core.platform import _WDA_NONE
+
+        monitor.set_pre_capture_callback(exclusion_mgr.exclude_all)
+        monitor.set_post_capture_callback(exclusion_mgr.restore_all)
+        self._setup_worker_mock(monitor)
+
+        wda_calls: list[tuple[int, int]] = []
+
+        def track_wda(hwnd: int, affinity: int) -> None:
+            wda_calls.append((hwnd, affinity))
+
+        with patch("src.core.platform._set_window_display_affinity", side_effect=track_wda), \
+             patch("src.core.monitor.capture_region", return_value="fake_b64"), \
+             patch("src.core.monitor.images_differ", return_value=True), \
+             patch("src.core.monitor.ocr_analyze", return_value=(True, None)):
+            monitor.translate_once()
+
+        # restore_all で全 HWND に WDA_NONE が呼ばれたことを検証
+        restore_calls = {
+            (h, a) for h, a in wda_calls if a == _WDA_NONE
+        }
+        expected = {
+            (1001, _WDA_NONE),
+            (1002, _WDA_NONE),
+            (1003, _WDA_NONE),
+        }
+        assert restore_calls == expected
+
+    def test_post_capture_called_on_capture_exception(
+        self, monitor, exclusion_mgr
+    ) -> None:
+        """capture_region 例外時も post_capture_cb（restore_all）が呼ばれる
+
+        **Validates: Requirements 6.3**
+        """
+        from src.core.platform import _WDA_NONE
+
+        monitor.set_pre_capture_callback(exclusion_mgr.exclude_all)
+        monitor.set_post_capture_callback(exclusion_mgr.restore_all)
+        self._setup_worker_mock(monitor)
+
+        wda_calls: list[tuple[int, int]] = []
+
+        def track_wda(hwnd: int, affinity: int) -> None:
+            wda_calls.append((hwnd, affinity))
+
+        with patch("src.core.platform._set_window_display_affinity", side_effect=track_wda), \
+             patch("src.core.monitor.capture_region", side_effect=RuntimeError("capture failed")):
+            monitor.translate_once()
+
+        # 例外発生後も restore_all が呼ばれ、全 HWND に WDA_NONE が設定される
+        restore_calls = {
+            (h, a) for h, a in wda_calls if a == _WDA_NONE
+        }
+        expected = {
+            (1001, _WDA_NONE),
+            (1002, _WDA_NONE),
+            (1003, _WDA_NONE),
+        }
+        assert restore_calls == expected
+
+    def test_translate_once_invokes_pre_and_post_callbacks(
+        self, monitor, exclusion_mgr
+    ) -> None:
+        """手動翻訳 translate_once でも pre/post コールバックが両方呼ばれる
+
+        **Validates: Requirements 6.4**
+        """
+        from src.core.platform import _WDA_EXCLUDEFROMCAPTURE, _WDA_NONE
+
+        monitor.set_pre_capture_callback(exclusion_mgr.exclude_all)
+        monitor.set_post_capture_callback(exclusion_mgr.restore_all)
+
+        call_order: list[str] = []
+        wda_calls: list[tuple[int, int]] = []
+
+        original_exclude = exclusion_mgr.exclude_all
+        original_restore = exclusion_mgr.restore_all
+
+        def tracked_exclude() -> None:
+            call_order.append("pre")
+            original_exclude()
+
+        def tracked_restore() -> None:
+            call_order.append("post")
+            original_restore()
+
+        monitor.set_pre_capture_callback(tracked_exclude)
+        monitor.set_post_capture_callback(tracked_restore)
+        self._setup_worker_mock(monitor)
+
+        def track_wda(hwnd: int, affinity: int) -> None:
+            wda_calls.append((hwnd, affinity))
+
+        with patch("src.core.platform._set_window_display_affinity", side_effect=track_wda), \
+             patch("src.core.monitor.capture_region", return_value="fake_b64"), \
+             patch("src.core.monitor.images_differ", return_value=True), \
+             patch("src.core.monitor.ocr_analyze", return_value=(True, None)):
+            monitor.translate_once()
+
+        # pre → post の順序で呼ばれたことを検証
+        assert call_order == ["pre", "post"]
+
+        # exclude_all と restore_all の両方が全 HWND に対して呼ばれたことを検証
+        exclude_calls = {
+            (h, a) for h, a in wda_calls if a == _WDA_EXCLUDEFROMCAPTURE
+        }
+        restore_calls = {
+            (h, a) for h, a in wda_calls if a == _WDA_NONE
+        }
+        assert len(exclude_calls) == 3
+        assert len(restore_calls) == 3
